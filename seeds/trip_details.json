@@ -1,0 +1,43 @@
+{
+  "_readme": [
+    "Researched detail for the away trips, applied by scripts/apply_trip_details.py.",
+    "",
+    "This file is in git on purpose. Unlike data/fcvino.sqlite3 — which holds your",
+    "friends' ratings and notes and stays out of the repo — these are public football",
+    "results. Keeping them here means the archive survives a lost database: enter the",
+    "trips once, and this file can rebuild every detail on any machine.",
+    "",
+    "Match a trip on year + country. Every field except year and country is optional;",
+    "the script fills only columns that are currently empty unless you pass --overwrite,",
+    "so nothing you typed in Discord gets clobbered.",
+    "",
+    "Goals are strings in the same format /trips add-goals accepts:",
+    "  \"<minute> <scorer> <H|A>\", e.g. \"23 Robben A\".",
+    "",
+    "'source' is ignored by the script and exists so a claim can be checked later.",
+    "Anything that cannot be verified should be left out rather than guessed at."
+  ],
+  "_example": {
+    "year": 2014,
+    "country": "Germany",
+    "city": "Dortmund",
+    "date_from": "2014-04-25",
+    "date_to": "2014-04-27",
+    "notes": "The one with the delayed flight",
+    "matches": [
+      {
+        "match_date": "2014-04-26",
+        "competition": "Bundesliga",
+        "home": "Borussia Dortmund",
+        "away": "Bayern Munich",
+        "home_goals": 0,
+        "away_goals": 3,
+        "stadium": "Signal Iduna Park",
+        "attendance": 80667,
+        "goals": ["23 Robben A", "45 Mueller A", "67 Goetze A"],
+        "source": "https://example.org/match-report"
+      }
+    ]
+  },
+  "trips": []
+}

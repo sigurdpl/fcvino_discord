@@ -27,7 +27,7 @@ class _NoVoiceNoise(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return "voice will NOT be supported" not in record.getMessage()
 
-CORE_COGS = ("bot.cogs.core", "bot.cogs.wine")
+CORE_COGS = ("bot.cogs.core", "bot.cogs.wine", "bot.cogs.trips")
 FOOTBALL_COGS = ("bot.cogs.football", "bot.cogs.predictions")
 
 

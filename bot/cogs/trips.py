@@ -1,0 +1,613 @@
+"""The away-trips archive: one match abroad a year since 2010.
+
+Hand-entered, deliberately. The football API's free tier has no data before the
+2023/24 season and no venue, attendance or goalscorers even inside that window,
+so there is nothing to fetch — the interesting detail is typed in or applied by
+`scripts/apply_trip_details.py`.
+
+Presentation only. Every statistic comes from `bot/trip_stats.py`, which is pure
+and tested on its own.
+"""
+
+from __future__ import annotations
+
+import logging
+import random
+import sqlite3
+from datetime import date
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from .. import trip_stats as stats
+from ..formatting import (
+    FOOTBALL_COLOUR,
+    NEUTRAL_COLOUR,
+    TABLE_COLOUR,
+    chunk_lines,
+    embed,
+    fmt_score,
+    medal,
+    truncate,
+)
+
+log = logging.getLogger(__name__)
+
+FIRST_TRIP_YEAR = 2010
+MAX_LIST_ROWS = 40
+TOP_N = 8
+
+
+def parse_day(value: str | None) -> tuple[str | None, str | None]:
+    """Validate a YYYY-MM-DD date. Returns (normalised, error message)."""
+    if value is None or not value.strip():
+        return None, None
+    try:
+        return date.fromisoformat(value.strip()).isoformat(), None
+    except ValueError:
+        return None, f"`{truncate(value, 40)}` isn't a date I understand — use `YYYY-MM-DD`."
+
+
+class Trips(commands.Cog):
+    trips = app_commands.Group(name="trips", description="Where FC Vino has been.")
+
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+
+    @property
+    def db(self):
+        return self.bot.db  # type: ignore[attr-defined]
+
+    # -- lookups -----------------------------------------------------------
+
+    def _all_trips(self) -> list[sqlite3.Row]:
+        return self.db.query("SELECT * FROM trips ORDER BY year, country")
+
+    def _trip_matches(self, trip_id: int) -> list[sqlite3.Row]:
+        return self.db.query(
+            "SELECT * FROM trip_matches WHERE trip_id=? ORDER BY match_date, id", (trip_id,)
+        )
+
+    def _goals(self, trip_match_id: int) -> list[sqlite3.Row]:
+        return self.db.query(
+            "SELECT * FROM trip_goals WHERE trip_match_id=? ORDER BY minute, id",
+            (trip_match_id,),
+        )
+
+    def _resolve_trip(self, value: str) -> sqlite3.Row | None:
+        """Accept an autocomplete id, a year, or a country name."""
+        value = (value or "").strip()
+        if value.isdigit():
+            by_id = self.db.query_one("SELECT * FROM trips WHERE id=?", (int(value),))
+            if by_id is not None:
+                return by_id
+            by_year = self.db.query_one(
+                "SELECT * FROM trips WHERE year=? ORDER BY id", (int(value),)
+            )
+            if by_year is not None:
+                return by_year
+        return self.db.query_one(
+            "SELECT * FROM trips WHERE country LIKE ? OR city LIKE ? ORDER BY year DESC",
+            (f"%{value}%", f"%{value}%"),
+        )
+
+    def _resolve_match(self, value: str) -> sqlite3.Row | None:
+        value = (value or "").strip()
+        if value.isdigit():
+            row = self.db.query_one("SELECT * FROM trip_matches WHERE id=?", (int(value),))
+            if row is not None:
+                return row
+        return self.db.query_one(
+            "SELECT * FROM trip_matches WHERE home LIKE ? OR away LIKE ? ORDER BY id DESC",
+            (f"%{value}%", f"%{value}%"),
+        )
+
+    # -- autocompletes -----------------------------------------------------
+
+    async def country_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Suggest countries already in the archive, so spellings stay consistent."""
+        rows = self.db.query("SELECT DISTINCT country FROM trips ORDER BY country")
+        term = current.strip().lower()
+        return [
+            app_commands.Choice(name=truncate(r["country"], 100), value=r["country"])
+            for r in rows
+            if not term or term in r["country"].lower()
+        ][:25]
+
+    async def trip_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        term = current.strip().lower()
+        choices = []
+        for trip in reversed(self._all_trips()):
+            label = f"{trip['year']} · {trip['country']}"
+            if trip["city"]:
+                label += f" ({trip['city']})"
+            if term and term not in label.lower():
+                continue
+            choices.append(
+                app_commands.Choice(name=truncate(label, 100), value=str(trip["id"]))
+            )
+        return choices[:25]
+
+    async def match_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        term = current.strip().lower()
+        choices = []
+        for row in reversed(self.db.trip_match_rows()):
+            label = f"{row['year']} · {row['home']} vs {row['away']}"
+            if term and term not in label.lower():
+                continue
+            choices.append(app_commands.Choice(name=truncate(label, 100), value=str(row["id"])))
+        return choices[:25]
+
+    # -- writing -----------------------------------------------------------
+
+    @trips.command(name="add", description="Record a trip (or amend one).")
+    @app_commands.describe(
+        year="Which year we travelled",
+        country="Country we visited",
+        city="City",
+        date_from="First day, YYYY-MM-DD",
+        date_to="Last day, YYYY-MM-DD",
+        notes="Anything worth remembering",
+    )
+    @app_commands.autocomplete(country=country_autocomplete)
+    async def add(
+        self,
+        interaction: discord.Interaction,
+        year: app_commands.Range[int, FIRST_TRIP_YEAR, 2100],
+        country: str,
+        city: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        notes: str | None = None,
+    ) -> None:
+        start, start_error = parse_day(date_from)
+        end, end_error = parse_day(date_to)
+        if start_error or end_error:
+            await interaction.response.send_message(start_error or end_error, ephemeral=True)
+            return
+        if start and end and end < start:
+            await interaction.response.send_message(
+                "The last day is before the first day.", ephemeral=True
+            )
+            return
+
+        clean_country = stats.normalise_country(country)
+        existing = self.db.query_one(
+            "SELECT id FROM trips WHERE year=? AND country=?", (int(year), clean_country)
+        )
+        trip_id = self.db.upsert_trip(
+            year=int(year),
+            country=clean_country,
+            city=(city or "").strip() or None,
+            date_from=start,
+            date_to=end,
+            notes=(notes or "").strip() or None,
+            added_by=interaction.user.id,
+        )
+        trip = self.db.query_one("SELECT * FROM trips WHERE id=?", (trip_id,))
+        verb = "Updated" if existing else "Recorded"
+        e = self._trip_embed(trip)
+        e.set_footer(text=f"Trip #{trip_id} · add the match with /trips add-match")
+        await interaction.response.send_message(f"✈️ {verb} the {trip['year']} trip.", embed=e)
+
+    @trips.command(name="add-match", description="Add the match we saw on a trip.")
+    @app_commands.describe(
+        trip="Start typing a year or country",
+        home="Home team",
+        away="Away team",
+        home_goals="Home goals",
+        away_goals="Away goals",
+        match_date="Day of the match, YYYY-MM-DD",
+        competition="League, cup, friendly…",
+        stadium="Ground",
+        attendance="Crowd, if you know it",
+        notes="Anything else",
+    )
+    @app_commands.autocomplete(trip=trip_autocomplete)
+    async def add_match(
+        self,
+        interaction: discord.Interaction,
+        trip: str,
+        home: str,
+        away: str,
+        home_goals: app_commands.Range[int, 0, 30] | None = None,
+        away_goals: app_commands.Range[int, 0, 30] | None = None,
+        match_date: str | None = None,
+        competition: str | None = None,
+        stadium: str | None = None,
+        attendance: app_commands.Range[int, 0, 200_000] | None = None,
+        notes: str | None = None,
+    ) -> None:
+        row = self._resolve_trip(trip)
+        if row is None:
+            await interaction.response.send_message(
+                "I don't have that trip yet — add it with `/trips add` first.", ephemeral=True
+            )
+            return
+        day, day_error = parse_day(match_date)
+        if day_error:
+            await interaction.response.send_message(day_error, ephemeral=True)
+            return
+
+        match_id = self.db.execute(
+            """INSERT INTO trip_matches (trip_id, match_date, competition, home, away,
+                                         home_goals, away_goals, stadium, attendance, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                row["id"],
+                day,
+                (competition or "").strip() or None,
+                home.strip(),
+                away.strip(),
+                home_goals if home_goals is None else int(home_goals),
+                away_goals if away_goals is None else int(away_goals),
+                (stadium or "").strip() or None,
+                attendance if attendance is None else int(attendance),
+                (notes or "").strip() or None,
+            ),
+        )
+        match = self.db.query_one("SELECT * FROM trip_matches WHERE id=?", (match_id,))
+        gaps = stats.missing_detail(match)
+        tail = f"\nStill missing: {', '.join(gaps)}." if gaps else ""
+        await interaction.response.send_message(
+            f"⚽ Added to **{row['year']} · {row['country']}**: "
+            f"{self._fixture_text(match)}{tail}"
+        )
+
+    @trips.command(name="add-goals", description="Record who scored in a match we saw.")
+    @app_commands.describe(
+        match="Start typing a team or year",
+        goals="e.g. 23 Haaland H, 67 Foden H, 81 Kane A",
+        replace="Replace the existing scorers instead of adding to them",
+    )
+    @app_commands.autocomplete(match=match_autocomplete)
+    async def add_goals(
+        self,
+        interaction: discord.Interaction,
+        match: str,
+        goals: str,
+        replace: bool = False,
+    ) -> None:
+        row = self._resolve_match(match)
+        if row is None:
+            await interaction.response.send_message(
+                "I don't have that match. Add it with `/trips add-match` first.", ephemeral=True
+            )
+            return
+        parsed, rejects = stats.parse_goals(goals)
+        if not parsed:
+            await interaction.response.send_message(
+                f"Couldn't read any goals out of that. {stats.GOALS_HELP}", ephemeral=True
+            )
+            return
+
+        if replace:
+            self.db.execute("DELETE FROM trip_goals WHERE trip_match_id=?", (row["id"],))
+        self.db.executemany(
+            "INSERT INTO trip_goals (trip_match_id, minute, scorer, side) VALUES (?, ?, ?, ?)",
+            [(row["id"], g.minute, g.scorer, g.side) for g in parsed],
+        )
+        message = f"⚽ Recorded {len(parsed)} goal(s) for {self._fixture_text(row)}."
+        if rejects:
+            message += (
+                f"\n⚠️ Skipped {len(rejects)}: `{truncate(', '.join(rejects), 200)}`. "
+                f"{stats.GOALS_HELP}"
+            )
+        await interaction.response.send_message(message)
+
+    @trips.command(name="remove", description="Delete a trip and everything on it.")
+    @app_commands.describe(trip="Start typing a year or country")
+    @app_commands.autocomplete(trip=trip_autocomplete)
+    async def remove(self, interaction: discord.Interaction, trip: str) -> None:
+        row = self._resolve_trip(trip)
+        if row is None:
+            await interaction.response.send_message("No such trip.", ephemeral=True)
+            return
+        is_admin = (
+            isinstance(interaction.user, discord.Member)
+            and interaction.user.guild_permissions.manage_guild
+        )
+        if row["added_by"] != interaction.user.id and not is_admin:
+            await interaction.response.send_message(
+                f"<@{row['added_by']}> recorded that trip — ask them, or an admin, to remove it.",
+                ephemeral=True,
+            )
+            return
+        self.db.execute("DELETE FROM trips WHERE id=?", (row["id"],))
+        await interaction.response.send_message(
+            f"🗑️ Removed the {row['year']} trip to {row['country']}, matches and all."
+        )
+
+    # -- reading -----------------------------------------------------------
+
+    @trips.command(name="list", description="Every trip, in order.")
+    async def list_trips(self, interaction: discord.Interaction) -> None:
+        trips = self._all_trips()
+        if not trips:
+            await interaction.response.send_message(
+                "Nothing recorded yet. `/trips add` to start with 2010.", ephemeral=True
+            )
+            return
+        lines = []
+        for trip in trips[:MAX_LIST_ROWS]:
+            matches = self._trip_matches(trip["id"])
+            where = trip["country"] + (f", {trip['city']}" if trip["city"] else "")
+            fixtures = " · ".join(self._fixture_text(m) for m in matches) or "_no match recorded_"
+            lines.append(f"**{trip['year']}** {where} — {fixtures}")
+        e = embed(f"✈️ {len(trips)} trips", colour=FOOTBALL_COLOUR)
+        for block in chunk_lines(lines):
+            e.add_field(name="​", value=block, inline=False)
+        await interaction.response.send_message(embed=e)
+
+    @trips.command(name="show", description="One trip in full.")
+    @app_commands.describe(trip="Start typing a year or country")
+    @app_commands.autocomplete(trip=trip_autocomplete)
+    async def show(self, interaction: discord.Interaction, trip: str) -> None:
+        row = self._resolve_trip(trip)
+        if row is None:
+            await interaction.response.send_message(
+                f"No trip matching **{truncate(trip, 60)}**.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(embed=self._trip_embed(row, full=True))
+
+    @trips.command(name="countries", description="Countries we've been to.")
+    async def countries(self, interaction: discord.Interaction) -> None:
+        trips = self._all_trips()
+        counts = stats.country_counts(trips)
+        if not counts:
+            await interaction.response.send_message("No trips recorded yet.", ephemeral=True)
+            return
+        by_country: dict[str, list[int]] = {}
+        for trip in trips:
+            by_country.setdefault(trip["country"], []).append(trip["year"])
+        lines = [
+            f"{medal(i)} **{country}** — {n}× "
+            f"({', '.join(str(y) for y in sorted(by_country[country]))})"
+            for i, (country, n) in enumerate(counts, start=1)
+        ]
+        e = embed(
+            f"🌍 {len(counts)} countries",
+            colour=FOOTBALL_COLOUR,
+            description="\n".join(lines)[:4000],
+        )
+        await interaction.response.send_message(embed=e)
+
+    @trips.command(name="teams", description="Clubs we've watched.")
+    async def teams(self, interaction: discord.Interaction) -> None:
+        matches = self.db.trip_match_rows()
+        counts = stats.club_counts(matches)
+        if not counts:
+            await interaction.response.send_message("No matches recorded yet.", ephemeral=True)
+            return
+        repeats = stats.repeat_clubs(matches)
+        e = embed(f"🏟️ {len(counts)} clubs seen", colour=FOOTBALL_COLOUR)
+        e.add_field(
+            name="Seen more than once" if repeats else "Nobody twice yet",
+            value="\n".join(f"**{club}** — {n}×" for club, n in repeats[:TOP_N])
+            or "Every club exactly once.",
+            inline=False,
+        )
+        e.add_field(
+            name="All clubs",
+            value=truncate(", ".join(club for club, _ in counts), 1000),
+            inline=False,
+        )
+        competitions = stats.competition_counts(matches)
+        if competitions:
+            e.add_field(
+                name="Competitions",
+                value="\n".join(f"{name} — {n}×" for name, n in competitions[:TOP_N]),
+                inline=False,
+            )
+        await interaction.response.send_message(embed=e)
+
+    @trips.command(name="stats", description="The numbers behind the trips.")
+    async def trip_statistics(self, interaction: discord.Interaction) -> None:
+        trips = self._all_trips()
+        matches = self.db.trip_match_rows()
+        if not trips:
+            await interaction.response.send_message("No trips recorded yet.", ephemeral=True)
+            return
+
+        countries = stats.country_counts(trips)
+        year_list = stats.years(trips)
+        scored = stats.played(matches)
+        home, draw, away = stats.result_split(matches)
+        e = embed("📊 FC Vino on tour", colour=TABLE_COLOUR)
+
+        grounds = stats.distinct_stadiums(matches)
+        crowd = stats.total_attendance(matches)
+        e.add_field(
+            name="🌍 Countries and grounds",
+            value=(
+                f"**{len(countries)}** countries · **{len(trips)}** trips · "
+                f"**{len(matches)}** matches\n"
+                f"**{len(grounds)}** different grounds"
+                + (f"\n**{crowd:,}**".replace(",", " ") + " people alongside us" if crowd else "")
+            ),
+            inline=False,
+        )
+
+        if scored:
+            per_game = stats.goals_per_game(matches)
+            biggest = stats.biggest_win(matches)
+            wildest = stats.highest_scoring(matches)
+            nils = stats.goalless(matches)
+            value = (
+                f"**{stats.total_goals(matches)}** goals in {len(scored)} match(es) — "
+                f"**{per_game:.2f}** a game\n"
+                f"Home **{home}** · Draw **{draw}** · Away **{away}**"
+            )
+            if biggest is not None:
+                value += f"\nBiggest win: {self._fixture_text(biggest)} ({biggest['year']})"
+            if wildest is not None:
+                value += f"\nMost goals: {self._fixture_text(wildest)} ({wildest['year']})"
+            if nils:
+                value += f"\n0-0s endured: **{len(nils)}**"
+            e.add_field(name="⚽ Goals and results", value=value, inline=False)
+
+        clubs = stats.club_counts(matches)
+        if clubs:
+            most = clubs[0]
+            repeats = stats.repeat_clubs(matches)
+            e.add_field(
+                name="👕 Teams",
+                value=(
+                    f"**{len(clubs)}** clubs · most seen: **{most[0]}** ({most[1]}×)\n"
+                    f"Seen more than once: **{len(repeats)}**"
+                ),
+                inline=False,
+            )
+
+        streak = stats.longest_year_streak(year_list)
+        best_year = stats.goals_by_year(matches)
+        superlatives = []
+        if streak:
+            span = streak[1] - streak[0] + 1
+            superlatives.append(f"Longest run: **{span}** straight years ({streak[0]}–{streak[1]})")
+        if year_list:
+            superlatives.append(f"First trip **{year_list[0]}**, latest **{year_list[-1]}**")
+        if best_year:
+            superlatives.append(f"Best year for goals: **{best_year[0][0]}** ({best_year[0][1]})")
+        gaps = [y for y in range(year_list[0], year_list[-1] + 1) if y not in set(year_list)]
+        if gaps:
+            superlatives.append(f"Years missing from the archive: {', '.join(map(str, gaps))}")
+        e.add_field(name="🏅 Streaks", value="\n".join(superlatives), inline=False)
+        await interaction.response.send_message(embed=e)
+
+    @trips.command(name="search", description="Find a trip by team, country, city or ground.")
+    @app_commands.describe(query="Anything to match on")
+    async def search(self, interaction: discord.Interaction, query: str) -> None:
+        like = f"%{query.strip()}%"
+        rows = self.db.query(
+            """SELECT m.*, t.year AS year, t.country AS country, t.city AS trip_city
+               FROM trip_matches m JOIN trips t ON t.id = m.trip_id
+               WHERE m.home LIKE ? OR m.away LIKE ? OR m.stadium LIKE ?
+                     OR m.competition LIKE ? OR t.country LIKE ? OR t.city LIKE ?
+               ORDER BY t.year""",
+            (like, like, like, like, like, like),
+        )
+        if not rows:
+            await interaction.response.send_message(
+                f"Nothing matches **{truncate(query, 60)}**.", ephemeral=True
+            )
+            return
+        lines = [
+            f"**{r['year']}** {r['country']} — {self._fixture_text(r)}"
+            + (f" · {r['stadium']}" if r["stadium"] else "")
+            for r in rows
+        ]
+        e = embed(
+            f"🔍 {len(rows)} match(es) for “{truncate(query, 50)}”",
+            colour=FOOTBALL_COLOUR,
+            description="\n".join(lines)[:4000],
+        )
+        await interaction.response.send_message(embed=e)
+
+    @trips.command(name="random", description="Remember a trip at random.")
+    async def random_trip(self, interaction: discord.Interaction) -> None:
+        trips = self._all_trips()
+        if not trips:
+            await interaction.response.send_message("No trips recorded yet.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            "🎲 Remember this one?", embed=self._trip_embed(random.choice(trips), full=True)
+        )
+
+    @trips.command(name="missing", description="What the archive still needs filling in.")
+    async def missing(self, interaction: discord.Interaction) -> None:
+        trips = self._all_trips()
+        if not trips:
+            await interaction.response.send_message("No trips recorded yet.", ephemeral=True)
+            return
+        lines = []
+        for trip in trips:
+            matches = self._trip_matches(trip["id"])
+            if not matches:
+                lines.append(f"**{trip['year']}** {trip['country']} — no match recorded")
+                continue
+            for match in matches:
+                gaps = stats.missing_detail(match)
+                if not self._goals(match["id"]):
+                    gaps.append("scorers")
+                if gaps:
+                    lines.append(
+                        f"**{trip['year']}** {self._fixture_text(match)} — {', '.join(gaps)}"
+                    )
+        if not lines:
+            await interaction.response.send_message(
+                "✅ Nothing missing — every trip has a date, competition, score, "
+                "ground, crowd and scorers.",
+                ephemeral=True,
+            )
+            return
+        e = embed(
+            f"📝 {len(lines)} thing(s) to fill in",
+            colour=NEUTRAL_COLOUR,
+            description="Add detail with `/trips add-match` or `/trips add-goals`.",
+        )
+        for block in chunk_lines(lines):
+            e.add_field(name="​", value=block, inline=False)
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
+    # -- rendering ---------------------------------------------------------
+
+    @staticmethod
+    def _fixture_text(match: sqlite3.Row) -> str:
+        score = fmt_score(match["home_goals"], match["away_goals"])
+        return f"{match['home']} **{score}** {match['away']}"
+
+    def _trip_embed(self, trip: sqlite3.Row, *, full: bool = False) -> discord.Embed:
+        where = trip["country"] + (f", {trip['city']}" if trip["city"] else "")
+        e = embed(f"✈️ {trip['year']} · {where}", colour=FOOTBALL_COLOUR)
+        if trip["date_from"]:
+            when = trip["date_from"]
+            if trip["date_to"] and trip["date_to"] != trip["date_from"]:
+                when += f" → {trip['date_to']}"
+            e.add_field(name="Dates", value=when, inline=True)
+        if trip["notes"]:
+            e.add_field(name="Notes", value=truncate(trip["notes"], 1000), inline=False)
+
+        matches = self._trip_matches(trip["id"])
+        if not matches:
+            e.add_field(
+                name="Match", value="Not recorded yet — `/trips add-match`.", inline=False
+            )
+            return e
+
+        for match in matches:
+            details = []
+            if match["competition"]:
+                details.append(match["competition"])
+            if match["match_date"]:
+                details.append(match["match_date"])
+            if match["stadium"]:
+                details.append(match["stadium"])
+            if match["attendance"]:
+                details.append(f"{match['attendance']:,}".replace(",", " ") + " in")
+            body = " · ".join(details)
+            if full:
+                goals = self._goals(match["id"])
+                if goals:
+                    scorers = ", ".join(
+                        f"{g['minute']}' {g['scorer']}"
+                        + (f" ({g['side']})" if g["side"] else "")
+                        for g in goals
+                    )
+                    body += f"\n⚽ {scorers}"
+                if match["notes"]:
+                    body += f"\n> {truncate(match['notes'], 300)}"
+            e.add_field(name=self._fixture_text(match), value=body or "​", inline=False)
+        return e
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(Trips(bot))

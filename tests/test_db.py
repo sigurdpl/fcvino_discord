@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.db import parse_utc, sql_str_tuple
+from bot.db import SCHEMA_VERSION, parse_utc, sql_str_tuple
 
 MATCH = {
     "match_id": 500,
@@ -33,12 +33,15 @@ def test_schema_creates_every_table(db):
         "reminders_sent",
         "announcements",
         "guild_config",
+        "trips",
+        "trip_matches",
+        "trip_goals",
     } <= names
 
 
 def test_migrate_is_safe_to_run_again(db):
     db.migrate()
-    assert db.query_one("PRAGMA user_version")[0] == 1
+    assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION
 
 
 def test_channel_config_round_trips_and_updates(db):

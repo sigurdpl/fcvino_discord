@@ -54,6 +54,20 @@ class Core(commands.Cog):
             ),
             inline=False,
         )
+        e.add_field(
+            name="✈️ Trips",
+            value=(
+                "`/trips add` — record a year's trip\n"
+                "`/trips add-match` — the match we saw\n"
+                "`/trips add-goals` — who scored\n"
+                "`/trips list` — every trip in order\n"
+                "`/trips show` — one trip in full\n"
+                "`/trips stats` — countries, goals, streaks\n"
+                "`/trips countries` · `/trips teams` — where and who\n"
+                "`/trips search` · `/trips random` · `/trips missing`"
+            ),
+            inline=False,
+        )
         if cfg.has_football:
             e.add_field(
                 name="⚽ Football",

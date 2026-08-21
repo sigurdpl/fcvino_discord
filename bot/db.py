@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS wines (
@@ -102,6 +102,47 @@ CREATE TABLE IF NOT EXISTS guild_config (
     wine_channel_id        INTEGER,
     predictions_channel_id INTEGER
 );
+
+-- The away-trips archive: one trip a year since 2010. Hand-entered, because the
+-- football API's free tier has no data before the 2023/24 season. Dates here are
+-- calendar days (YYYY-MM-DD), not the UTC kickoff instants `matches` stores.
+CREATE TABLE IF NOT EXISTS trips (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    year      INTEGER NOT NULL,
+    country   TEXT    NOT NULL,
+    city      TEXT,
+    date_from TEXT,
+    date_to   TEXT,
+    notes     TEXT,
+    added_by  INTEGER NOT NULL,
+    added_at  TEXT    NOT NULL,
+    UNIQUE (year, country)
+);
+CREATE INDEX IF NOT EXISTS idx_trips_year ON trips(year);
+
+CREATE TABLE IF NOT EXISTS trip_matches (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id     INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    match_date  TEXT,
+    competition TEXT,
+    home        TEXT    NOT NULL,
+    away        TEXT    NOT NULL,
+    home_goals  INTEGER,
+    away_goals  INTEGER,
+    stadium     TEXT,
+    attendance  INTEGER,
+    notes       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trip_matches_trip ON trip_matches(trip_id);
+
+CREATE TABLE IF NOT EXISTS trip_goals (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_match_id INTEGER NOT NULL REFERENCES trip_matches(id) ON DELETE CASCADE,
+    minute        INTEGER,
+    scorer        TEXT    NOT NULL,
+    side          TEXT    CHECK (side IN ('H', 'A'))
+);
+CREATE INDEX IF NOT EXISTS idx_trip_goals_match ON trip_goals(trip_match_id);
 """
 
 CHANNEL_KINDS = ("football", "wine", "predictions")
@@ -272,6 +313,55 @@ class Database:
             rows,
         )
         return len(rows)
+
+    # -- trips archive -----------------------------------------------------
+
+    def upsert_trip(
+        self,
+        *,
+        year: int,
+        country: str,
+        city: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        notes: str | None = None,
+        added_by: int,
+    ) -> int:
+        """Insert or amend a trip, returning its id.
+
+        Re-adding the same (year, country) fills in the fields you supply and
+        leaves the rest alone, so correcting a typo in the city cannot silently
+        wipe the notes.
+        """
+        self.execute(
+            """INSERT INTO trips (year, country, city, date_from, date_to, notes,
+                                  added_by, added_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(year, country) DO UPDATE SET
+                   city=COALESCE(excluded.city, trips.city),
+                   date_from=COALESCE(excluded.date_from, trips.date_from),
+                   date_to=COALESCE(excluded.date_to, trips.date_to),
+                   notes=COALESCE(excluded.notes, trips.notes)""",
+            (year, country, city, date_from, date_to, notes, added_by, utcnow_iso()),
+        )
+        row = self.query_one("SELECT id FROM trips WHERE year=? AND country=?", (year, country))
+        assert row is not None
+        return row["id"]
+
+    def trip_match_rows(self, *, trip_id: int | None = None) -> list[sqlite3.Row]:
+        """Matches with their trip's year and country joined on, newest last.
+
+        Every stats function takes rows in this shape, so there is one query to
+        keep correct rather than one per statistic.
+        """
+        clause = " WHERE m.trip_id=?" if trip_id is not None else ""
+        params = (trip_id,) if trip_id is not None else ()
+        return self.query(
+            f"""SELECT m.*, t.year AS year, t.country AS country, t.city AS trip_city
+                FROM trip_matches m JOIN trips t ON t.id = m.trip_id{clause}
+                ORDER BY t.year, m.match_date, m.id""",
+            params,
+        )
 
     # -- one-shot announcement guard ---------------------------------------
 

@@ -123,6 +123,45 @@ Proves the football key works on its own, so if `/football fixtures` misbehaves 
 
 Bottle names autocomplete, so nobody types database ids.
 
+### ✈️ Trips
+
+The away-trip archive: one match abroad a year since 2010.
+
+| Command | What it does |
+|---|---|
+| `/trips add` | Record a year's trip: country, city, dates, notes. Re-run it to amend — supplying a city won't wipe the notes |
+| `/trips add-match` | The match we saw: teams, score, competition, ground, crowd |
+| `/trips add-goals` | Scorers for one match in a single field: `23 Robben A, 45 Mueller A` — minute, scorer, then H or A |
+| `/trips list` | Every trip in order |
+| `/trips show` | One trip in full, scorers included |
+| `/trips stats` | Countries, grounds, goals, results, clubs, streaks — "how many countries have we seen" |
+| `/trips countries` | Each country with visit count and years |
+| `/trips teams` | Every club seen, repeats flagged, competitions |
+| `/trips search` | By team, country, city or ground |
+| `/trips random` | One trip at random |
+| `/trips missing` | What still needs filling in |
+
+**Why this is typed in rather than fetched.** The football-data.org free tier has no
+match data before the 2023/24 season, covers only 12 competitions, and returns no venue,
+no attendance and an empty goalscorer list even where it does work. Every one of those was
+checked against a live key rather than assumed. So the archive stands on its own.
+
+**Filling in the detail.** Enter the trips through the commands above, then the researched
+detail — exact dates, competitions, grounds, crowds, scorers — goes into
+`seeds/trip_details.json` and is applied with:
+
+```bash
+python scripts/apply_trip_details.py --dry-run     # show what would change
+python scripts/apply_trip_details.py               # fill empty columns only
+python scripts/apply_trip_details.py --create      # also insert missing trips
+```
+
+It only fills columns that are empty, so it can never overwrite something you typed
+(pass `--overwrite` when you want the file to win), and re-running it changes nothing.
+That file is in git on purpose: public football results are reference data, so unlike
+`data/fcvino.sqlite3` they belong in the repo — which means the archive survives a lost
+database.
+
 ### ⚽ Football
 
 | Command | What it does |
@@ -154,9 +193,11 @@ bot/config.py         .env -> a validated Config, with error messages you can ac
 bot/db.py             SQLite schema and helpers; the idempotency guards live here
 bot/football_api.py   the only thing that talks to football-data.org: rate limit + cache
 bot/mirror.py         keeps the local `matches` table in step with the API
+bot/trip_stats.py     pure statistics over the trips archive
 bot/formatting.py     embeds, colours, kroner, Discord timestamps
 bot/cogs/core.py      /ping, /fcvino-help, /fcvino-setup
 bot/cogs/wine.py      the cellar
+bot/cogs/trips.py     the away-trip archive
 bot/cogs/football.py  fixtures, results, tables, kickoff reminders
 bot/cogs/predictions.py  the prediction game and its scoring loop
 ```
