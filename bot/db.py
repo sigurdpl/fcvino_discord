@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS wines (
@@ -96,13 +96,6 @@ CREATE TABLE IF NOT EXISTS announcements (
     sent_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS guild_config (
-    guild_id               INTEGER PRIMARY KEY,
-    football_channel_id    INTEGER,
-    wine_channel_id        INTEGER,
-    predictions_channel_id INTEGER
-);
-
 -- The away-trips archive: one trip a year since 2010. Hand-entered, because the
 -- football API's free tier has no data before the 2023/24 season. Dates here are
 -- calendar days (YYYY-MM-DD), not the UTC kickoff instants `matches` stores.
@@ -143,9 +136,33 @@ CREATE TABLE IF NOT EXISTS trip_goals (
     side          TEXT    CHECK (side IN ('H', 'A'))
 );
 CREATE INDEX IF NOT EXISTS idx_trip_goals_match ON trip_goals(trip_match_id);
+
+-- One row per (guild, kind) rather than a column per kind, so a new kind of
+-- automatic post costs a row and not an ALTER TABLE. Replaces guild_config,
+-- which `_migrate_guild_config` drains and drops.
+CREATE TABLE IF NOT EXISTS guild_channels (
+    guild_id   INTEGER NOT NULL,
+    kind       TEXT    NOT NULL,
+    channel_id INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, kind)
+);
+
+-- Messages the bot keeps up to date in place, e.g. the league table. Holding
+-- the message id means a restart carries on editing the same message instead of
+-- posting a second one, and content_hash means a table that hasn't moved is
+-- left alone rather than re-edited every half hour.
+CREATE TABLE IF NOT EXISTS bot_messages (
+    guild_id     INTEGER NOT NULL,
+    kind         TEXT    NOT NULL,
+    channel_id   INTEGER NOT NULL,
+    message_id   INTEGER NOT NULL,
+    content_hash TEXT,
+    updated_at   TEXT    NOT NULL,
+    PRIMARY KEY (guild_id, kind)
+);
 """
 
-CHANNEL_KINDS = ("football", "wine", "predictions")
+CHANNEL_KINDS = ("football", "wine", "predictions", "standings")
 
 
 def utcnow() -> datetime:
@@ -193,7 +210,37 @@ class Database:
         conn = self._conn
         assert conn is not None
         conn.executescript(SCHEMA)
+        self._migrate_guild_config()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        conn.commit()
+
+    def _migrate_guild_config(self) -> None:
+        """Move the old column-per-kind guild_config into guild_channels.
+
+        Idempotent: once the table is gone there is nothing to do. Kept rather
+        than simply dropping the table so a database configured before the
+        change keeps its channels.
+        """
+        conn = self._conn
+        assert conn is not None
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='guild_config'"
+        ).fetchone()
+        if not exists:
+            return
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(guild_config)")}
+        for kind in CHANNEL_KINDS:
+            column = f"{kind}_channel_id"
+            if column not in columns:
+                continue
+            conn.execute(
+                f"""INSERT INTO guild_channels (guild_id, kind, channel_id)
+                    SELECT guild_id, ?, {column} FROM guild_config
+                    WHERE {column} IS NOT NULL
+                    ON CONFLICT(guild_id, kind) DO NOTHING""",
+                (kind,),
+            )
+        conn.execute("DROP TABLE guild_config")
         conn.commit()
 
     def close(self) -> None:
@@ -218,35 +265,64 @@ class Database:
         self.conn.executemany(sql, rows)
         self.conn.commit()
 
-    # -- guild config ------------------------------------------------------
+    # -- guild channels ----------------------------------------------------
 
-    def set_channel(self, guild_id: int, kind: str, channel_id: int) -> None:
+    @staticmethod
+    def _check_kind(kind: str) -> None:
         if kind not in CHANNEL_KINDS:
             raise ValueError(f"unknown channel kind {kind!r}")
-        column = f"{kind}_channel_id"
+
+    def set_channel(self, guild_id: int, kind: str, channel_id: int) -> None:
+        self._check_kind(kind)
         self.execute(
-            f"""INSERT INTO guild_config (guild_id, {column}) VALUES (?, ?)
-                ON CONFLICT(guild_id) DO UPDATE SET {column}=excluded.{column}""",
-            (guild_id, channel_id),
+            """INSERT INTO guild_channels (guild_id, kind, channel_id) VALUES (?, ?, ?)
+               ON CONFLICT(guild_id, kind) DO UPDATE SET channel_id=excluded.channel_id""",
+            (guild_id, kind, channel_id),
         )
 
     def get_channel(self, guild_id: int, kind: str) -> int | None:
-        if kind not in CHANNEL_KINDS:
-            raise ValueError(f"unknown channel kind {kind!r}")
+        self._check_kind(kind)
         row = self.query_one(
-            f"SELECT {kind}_channel_id AS cid FROM guild_config WHERE guild_id=?", (guild_id,)
+            "SELECT channel_id FROM guild_channels WHERE guild_id=? AND kind=?",
+            (guild_id, kind),
         )
-        return row["cid"] if row else None
+        return row["channel_id"] if row else None
 
     def configured_guilds(self, kind: str) -> list[tuple[int, int]]:
         """[(guild_id, channel_id)] for guilds with this channel kind set."""
-        if kind not in CHANNEL_KINDS:
-            raise ValueError(f"unknown channel kind {kind!r}")
+        self._check_kind(kind)
         rows = self.query(
-            f"SELECT guild_id, {kind}_channel_id AS cid FROM guild_config "
-            f"WHERE {kind}_channel_id IS NOT NULL"
+            "SELECT guild_id, channel_id FROM guild_channels WHERE kind=? ORDER BY guild_id",
+            (kind,),
         )
-        return [(r["guild_id"], r["cid"]) for r in rows]
+        return [(r["guild_id"], r["channel_id"]) for r in rows]
+
+    # -- messages kept up to date ------------------------------------------
+
+    def get_bot_message(self, guild_id: int, kind: str) -> sqlite3.Row | None:
+        return self.query_one(
+            "SELECT * FROM bot_messages WHERE guild_id=? AND kind=?", (guild_id, kind)
+        )
+
+    def set_bot_message(
+        self, guild_id: int, kind: str, *, channel_id: int, message_id: int, content_hash: str
+    ) -> None:
+        self.execute(
+            """INSERT INTO bot_messages (guild_id, kind, channel_id, message_id,
+                                         content_hash, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id, kind) DO UPDATE SET
+                   channel_id=excluded.channel_id,
+                   message_id=excluded.message_id,
+                   content_hash=excluded.content_hash,
+                   updated_at=excluded.updated_at""",
+            (guild_id, kind, channel_id, message_id, content_hash, utcnow_iso()),
+        )
+
+    def clear_bot_message(self, guild_id: int, kind: str) -> None:
+        self.execute(
+            "DELETE FROM bot_messages WHERE guild_id=? AND kind=?", (guild_id, kind)
+        )
 
     # -- members -----------------------------------------------------------
 

@@ -172,6 +172,16 @@ database.
 | `/football myteam` | Register your club, from an autocompleted list. No argument shows your current pick |
 | `/football forget-team` | Stop following it |
 
+**A channel that shows the league table.** A Discord channel can't invoke a slash command — commands only fire when a person types one. So for a dedicated `#premier-league-table` channel, the bot maintains it instead:
+
+```
+/fcvino-setup kind:standings channel:#premier-league-table
+```
+
+It posts the table once, pins it, then **edits that same message** every 30 minutes, so the channel holds exactly one message that's always current rather than a season's worth of stale tables. It only edits when the table has actually moved — a fingerprint of positions, games played, goal difference and points is compared first — so there's no `(edited)` churn on a quiet Tuesday and no wasted API calls. The message id is stored, so a restart carries on editing the same message; if someone deletes it, the next pass posts a fresh one.
+
+Pinning needs **Manage Messages**, which isn't in the invite permissions above. Without it the table still works, just unpinned — add the permission to the bot's role if you want it pinned.
+
 Once a football channel is set, the bot posts a reminder 60 minutes before kickoff and tags whoever follows one of the teams playing. Change the lead time with `REMINDER_LEAD_MINUTES`, and the competitions with `REMINDER_COMPETITIONS` (set it to just `CL` if a full Premier League slate is too much).
 
 ### 🎯 Predictions

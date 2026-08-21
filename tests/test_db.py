@@ -32,11 +32,13 @@ def test_schema_creates_every_table(db):
         "prediction_scores",
         "reminders_sent",
         "announcements",
-        "guild_config",
+        "guild_channels",
+        "bot_messages",
         "trips",
         "trip_matches",
         "trip_goals",
     } <= names
+    assert "guild_config" not in names, "replaced by guild_channels"
 
 
 def test_migrate_is_safe_to_run_again(db):

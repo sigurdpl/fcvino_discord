@@ -7,6 +7,7 @@ mid-window can't double-ping.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import timedelta
 
@@ -36,6 +37,7 @@ from ..mirror import refresh_competitions, refresh_favourite_teams
 log = logging.getLogger(__name__)
 
 REFRESH_MINUTES = 15
+STANDINGS_REFRESH_MINUTES = 30
 # Favourite clubs get their own API call each, so refresh them less often than
 # the league-wide lists: once an hour is ample for a kickoff-time change.
 TEAM_REFRESH_EVERY = 4
@@ -68,9 +70,11 @@ class Football(commands.Cog):
 
     async def cog_load(self) -> None:
         self.reminder_loop.start()
+        self.standings_loop.start()
 
     async def cog_unload(self) -> None:
         self.reminder_loop.cancel()
+        self.standings_loop.cancel()
 
     # -- mirror ------------------------------------------------------------
 
@@ -248,30 +252,12 @@ class Football(commands.Cog):
             await interaction.followup.send(f"⚠️ {exc}", ephemeral=True)
             return
 
-        totals = [s for s in data.get("standings", []) if s.get("type") == "TOTAL"]
-        if not totals:
+        e = self._standings_embed(data, name)
+        if e is None:
             await interaction.followup.send(
                 f"No table published for {name} yet.", ephemeral=True
             )
             return
-
-        e = embed(f"🏟️ {name}", colour=FOOTBALL_COLOUR)
-        for standing in totals[:4]:
-            table = standing.get("table", [])[:MAX_TABLE_ROWS]
-            lines = [
-                f"`{row['position']:>2}` {truncate(self._team_name(row), 22):<22}"
-                f" `{row['playedGames']:>2}` `{row['goalDifference']:>+3}` **{row['points']:>2}**"
-                for row in table
-            ]
-            if not lines:
-                continue
-            header = standing.get("group") or "Table"
-            e.add_field(
-                name=header.replace("_", " ").title(),
-                value="`Pos Team                    P  GD Pts`\n" + "\n".join(lines),
-                inline=False,
-            )
-        e.set_footer(text=f"Top {MAX_TABLE_ROWS} shown · football-data.org")
         await interaction.followup.send(embed=e)
 
     @football.command(name="myteam", description="Register your club so you get pinged for it.")
@@ -345,6 +331,146 @@ class Football(commands.Cog):
         await interaction.response.send_message(
             "Done — no more reminders for your club.", ephemeral=True
         )
+
+    # -- standings rendering -----------------------------------------------
+
+    @staticmethod
+    def _standings_tables(data: dict) -> list[dict]:
+        """The overall tables in an API standings payload, groups included."""
+        return [s for s in data.get("standings", []) if s.get("type") == "TOTAL"]
+
+    def _standings_embed(self, data: dict, name: str) -> discord.Embed | None:
+        """Render a standings payload, or None if no table is published yet."""
+        totals = self._standings_tables(data)
+        if not totals:
+            return None
+        e = embed(f"🏟️ {name}", colour=FOOTBALL_COLOUR)
+        for standing in totals[:4]:
+            table = standing.get("table", [])[:MAX_TABLE_ROWS]
+            lines = [
+                f"`{row['position']:>2}` {truncate(self._team_name(row), 22):<22}"
+                f" `{row['playedGames']:>2}` `{row['goalDifference']:>+3}` **{row['points']:>2}**"
+                for row in table
+            ]
+            if not lines:
+                continue
+            header = standing.get("group") or "Table"
+            e.add_field(
+                name=header.replace("_", " ").title(),
+                value="`Pos Team                    P  GD Pts`\n" + "\n".join(lines),
+                inline=False,
+            )
+        if not e.fields:
+            return None
+        e.set_footer(text=f"Top {MAX_TABLE_ROWS} shown · football-data.org")
+        return e
+
+    def _standings_hash(self, data: dict) -> str:
+        """Fingerprint of the table's substance, ignoring anything cosmetic.
+
+        The loop compares this before editing, so a table that hasn't moved
+        since the last check is left alone rather than re-edited every half
+        hour — no "(edited)" marks on a quiet Tuesday.
+        """
+        parts: list[str] = []
+        for standing in self._standings_tables(data):
+            parts.append(str(standing.get("group") or ""))
+            for row in standing.get("table", [])[:MAX_TABLE_ROWS]:
+                parts.append(
+                    f"{row.get('position')}|{self._team_name(row)}|{row.get('playedGames')}"
+                    f"|{row.get('goalDifference')}|{row.get('points')}"
+                )
+        return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+    # -- standings loop ----------------------------------------------------
+
+    @tasks.loop(minutes=STANDINGS_REFRESH_MINUTES)
+    async def standings_loop(self) -> None:
+        """Keep one message per guild showing the current table.
+
+        A channel cannot invoke a slash command, so a dedicated table channel is
+        the bot posting once and editing that message from then on.
+        """
+        targets = self.db.configured_guilds("standings")
+        if not targets:
+            return
+        code = self.cfg.prediction_competition
+        name = FREE_COMPETITIONS.get(code, code)
+        try:
+            data = await self.api.standings(code)
+        except FootballAPIError as exc:
+            log.warning("standings refresh failed: %s", exc)
+            return
+
+        e = self._standings_embed(data, name)
+        if e is None:
+            log.info("no %s table published yet", code)
+            return
+        fingerprint = self._standings_hash(data)
+
+        for guild_id, channel_id in targets:
+            guild = self.bot.get_guild(guild_id)
+            channel = guild.get_channel(channel_id) if guild else None
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            await self._publish_standings(guild_id, channel, e, fingerprint)
+
+    async def _publish_standings(
+        self,
+        guild_id: int,
+        channel: discord.TextChannel,
+        e: discord.Embed,
+        fingerprint: str,
+    ) -> None:
+        existing = self.db.get_bot_message(guild_id, "standings")
+        if (
+            existing
+            and existing["content_hash"] == fingerprint
+            and existing["channel_id"] == channel.id
+        ):
+            return
+
+        if existing and existing["channel_id"] == channel.id:
+            try:
+                message = await channel.fetch_message(existing["message_id"])
+                await message.edit(embed=e)
+                self.db.set_bot_message(
+                    guild_id,
+                    "standings",
+                    channel_id=channel.id,
+                    message_id=message.id,
+                    content_hash=fingerprint,
+                )
+                return
+            except discord.NotFound:
+                # Someone deleted it; fall through and post a fresh one.
+                log.info("standings message %s is gone, reposting", existing["message_id"])
+                self.db.clear_bot_message(guild_id, "standings")
+            except discord.HTTPException:
+                log.exception("could not edit the standings message")
+                return
+
+        try:
+            message = await channel.send(embed=e)
+        except discord.HTTPException:
+            log.exception("could not post the standings message")
+            return
+        self.db.set_bot_message(
+            guild_id,
+            "standings",
+            channel_id=channel.id,
+            message_id=message.id,
+            content_hash=fingerprint,
+        )
+        try:
+            await message.pin(reason="FC Vino league table")
+        except discord.HTTPException:
+            # Pinning needs Manage Messages; the table works fine unpinned.
+            log.info("could not pin the standings message in #%s", channel.name)
+
+    @standings_loop.before_loop
+    async def before_standings_loop(self) -> None:
+        await self.bot.wait_until_ready()
 
     # -- reminder loop -----------------------------------------------------
 
