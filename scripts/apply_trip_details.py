@@ -35,11 +35,14 @@ MATCH_FIELDS = (
     "competition",
     "home_goals",
     "away_goals",
+    "city",
     "stadium",
     "attendance",
     "notes",
 )
-TRIP_FIELDS = ("city", "date_from", "date_to", "notes")
+# The country is fillable too: the trip is keyed on year alone, so the research
+# pass can correct where we went as readily as when.
+TRIP_FIELDS = ("country", "city", "date_from", "date_to", "notes")
 
 # Seeded rows carry user id 0, which no Discord account can have, so it is
 # obvious in the database that a row came from the file rather than a person.
@@ -67,33 +70,42 @@ def _is_empty(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
-def _find_trip(db: Database, year: int, country: str):
-    return db.query_one("SELECT * FROM trips WHERE year=? AND country=?", (year, country))
+def _find_trip(db: Database, year: int):
+    """Trips are keyed on year — one place a year."""
+    return db.trip_by_year(year)
 
 
-def _find_match(db: Database, trip_id: int, spec: dict[str, Any]):
-    """Locate the match this spec refers to: teams first, then date."""
+def _find_match(db: Database, trip_id: int, spec: dict[str, Any], claimed: set[int]):
+    """Locate the stored match this spec refers to: teams first, then date.
+
+    `claimed` holds the ids already bound to an earlier spec in this run. Without
+    it, two matches on one trip both bind to whichever row exists first: the
+    second spec finds no name or date match, falls back to "this trip has exactly
+    one match", and overwrites the first instead of being created alongside it.
+    """
+    candidates = [
+        row
+        for row in db.query("SELECT * FROM trip_matches WHERE trip_id=?", (trip_id,))
+        if row["id"] not in claimed
+    ]
     home, away = (spec.get("home") or "").strip(), (spec.get("away") or "").strip()
     if home and away:
-        row = db.query_one(
-            """SELECT * FROM trip_matches WHERE trip_id=?
-               AND LOWER(home)=LOWER(?) AND LOWER(away)=LOWER(?)""",
-            (trip_id, home, away),
-        )
-        if row is not None:
-            return row
+        named = [
+            row
+            for row in candidates
+            if row["home"].lower() == home.lower() and row["away"].lower() == away.lower()
+        ]
+        if named:
+            return named[0]
     if spec.get("match_date"):
-        row = db.query_one(
-            "SELECT * FROM trip_matches WHERE trip_id=? AND match_date=?",
-            (trip_id, spec["match_date"]),
-        )
-        if row is not None:
-            return row
+        dated = [row for row in candidates if row["match_date"] == spec["match_date"]]
+        if dated:
+            return dated[0]
         # Fall through rather than giving up: the stored row may predate the
         # researched date, which is precisely what this pass is here to fix.
-    # A trip with exactly one match is unambiguous however it was spelled.
-    rows = db.query("SELECT * FROM trip_matches WHERE trip_id=?", (trip_id,))
-    return rows[0] if len(rows) == 1 else None
+    # One unclaimed match left on the trip is unambiguous however it was spelled,
+    # which is what lets "BVB vs FCB" be matched by its full names.
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def _apply_columns(
@@ -180,10 +192,10 @@ def apply_seed(
             continue
         label = f"{year} {country}"
 
-        trip = _find_trip(db, year, country)
+        trip = _find_trip(db, year)
         if trip is None:
             if not create:
-                report.problem(f"{label}: no such trip in the database (use --create)")
+                report.problem(f"{label}: no {year} trip in the database (use --create)")
                 continue
             report.change(f"{label}: creating trip")
             if not dry_run:
@@ -196,19 +208,24 @@ def apply_seed(
                     notes=spec.get("notes"),
                     added_by=SEED_USER_ID,
                 )
-                trip = _find_trip(db, year, country)
+                trip = _find_trip(db, year)
             if trip is None:
                 continue
         else:
+            # Compare the normalised country, or "germany" in the file reads as a
+            # difference from the stored "Germany" on every single run.
             _apply_columns(
-                db, "trips", trip, spec, TRIP_FIELDS,
+                db, "trips", trip, {**spec, "country": country}, TRIP_FIELDS,
                 overwrite=overwrite, dry_run=dry_run, report=report, label=label,
             )
 
+        claimed: set[int] = set()
         for match_spec in spec.get("matches", []):
-            match = _find_match(db, trip["id"], match_spec)
+            match = _find_match(db, trip["id"], match_spec, claimed)
             fixture = f"{match_spec.get('home', '?')} vs {match_spec.get('away', '?')}"
             match_label = f"{label} · {fixture}"
+            created = False
+
             if match is None:
                 if not create:
                     report.problem(f"{match_label}: no matching fixture recorded (use --create)")
@@ -218,8 +235,9 @@ def apply_seed(
                     continue
                 match_id = db.execute(
                     """INSERT INTO trip_matches (trip_id, match_date, competition, home, away,
-                                                 home_goals, away_goals, stadium, attendance, notes)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                                 home_goals, away_goals, city, stadium,
+                                                 attendance, notes)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         trip["id"],
                         match_spec.get("match_date"),
@@ -228,18 +246,25 @@ def apply_seed(
                         (match_spec.get("away") or "?").strip(),
                         match_spec.get("home_goals"),
                         match_spec.get("away_goals"),
+                        match_spec.get("city"),
                         match_spec.get("stadium"),
                         match_spec.get("attendance"),
                         match_spec.get("notes"),
                     ),
                 )
                 match = db.query_one("SELECT * FROM trip_matches WHERE id=?", (match_id,))
-            else:
+                created = True
+            if match is None:
+                continue
+
+            # Claim it so a later spec on the same trip cannot bind here too.
+            claimed.add(match["id"])
+            if not created:
                 _apply_columns(
                     db, "trip_matches", match, match_spec, MATCH_FIELDS,
                     overwrite=overwrite, dry_run=dry_run, report=report, label=match_label,
                 )
-            if match is not None and match_spec.get("goals"):
+            if match_spec.get("goals"):
                 _apply_goals(
                     db, match["id"], list(match_spec["goals"]),
                     overwrite=overwrite, dry_run=dry_run, report=report, label=match_label,

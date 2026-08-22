@@ -7,13 +7,16 @@ as UTC ISO-8601 text so the file stays readable with any sqlite client.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 3
+log = logging.getLogger(__name__)
+
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS wines (
@@ -96,23 +99,28 @@ CREATE TABLE IF NOT EXISTS announcements (
     sent_at TEXT NOT NULL
 );
 
--- The away-trips archive: one trip a year since 2010. Hand-entered, because the
--- football API's free tier has no data before the 2023/24 season. Dates here are
--- calendar days (YYYY-MM-DD), not the UTC kickoff instants `matches` stores.
+-- The away-trips archive: one place a year since 2010, sometimes more than one
+-- match while we are there. Hand-entered, because the football API's free tier
+-- has no data before the 2023/24 season. Dates here are calendar days
+-- (YYYY-MM-DD), not the UTC kickoff instants `matches` stores.
+--
+-- The year alone is unique: we go one place a year, so re-adding a year amends
+-- that trip rather than creating a second one.
 CREATE TABLE IF NOT EXISTS trips (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    year      INTEGER NOT NULL,
+    year      INTEGER NOT NULL UNIQUE,
     country   TEXT    NOT NULL,
     city      TEXT,
     date_from TEXT,
     date_to   TEXT,
     notes     TEXT,
     added_by  INTEGER NOT NULL,
-    added_at  TEXT    NOT NULL,
-    UNIQUE (year, country)
+    added_at  TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_trips_year ON trips(year);
 
+-- `city` is per match and falls back to the trip's: a London trip needs no
+-- per-match city, a Ruhr trip taking in Dortmund and Gelsenkirchen does.
 CREATE TABLE IF NOT EXISTS trip_matches (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trip_id     INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -122,6 +130,7 @@ CREATE TABLE IF NOT EXISTS trip_matches (
     away        TEXT    NOT NULL,
     home_goals  INTEGER,
     away_goals  INTEGER,
+    city        TEXT,
     stadium     TEXT,
     attendance  INTEGER,
     notes       TEXT
@@ -211,8 +220,102 @@ class Database:
         assert conn is not None
         conn.executescript(SCHEMA)
         self._migrate_guild_config()
+        self._migrate_trip_match_city()
+        self._migrate_trip_year_key()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
+
+    def _migrate_trip_match_city(self) -> None:
+        """Add trip_matches.city to a database created before it existed.
+
+        An added nullable column is a plain ALTER; only dropping or changing a
+        constraint needs the rebuild `_migrate_trip_year_key` does.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(trip_matches)")}
+        if not columns or "city" in columns:
+            return
+        conn.execute("ALTER TABLE trip_matches ADD COLUMN city TEXT")
+        conn.commit()
+        log.info("added trip_matches.city")
+
+    def _migrate_trip_year_key(self) -> None:
+        """Re-key trips on year alone: we go one place a year.
+
+        The old table had UNIQUE (year, country), which allowed two trips in one
+        year. SQLite cannot drop a constraint, so the table is rebuilt. Ids are
+        preserved, which is what keeps trip_matches.trip_id valid across the
+        swap; foreign keys are disabled for the duration because otherwise
+        DROP TABLE trips would cascade every match into oblivion.
+        """
+        conn = self._conn
+        assert conn is not None
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='trips'"
+        ).fetchone()
+        if row is None or "UNIQUE (year, country)" not in (row["sql"] or ""):
+            return
+
+        merged = conn.execute(
+            "SELECT year, COUNT(*) AS n FROM trips GROUP BY year HAVING n > 1"
+        ).fetchall()
+
+        if conn.in_transaction:
+            conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF")
+        if conn.execute("PRAGMA foreign_keys").fetchone()[0]:
+            # Refuse rather than risk cascading the matches away.
+            log.error("could not disable foreign keys; leaving trips as it is")
+            return
+        try:
+            conn.executescript(
+                """CREATE TABLE trips_rebuilt (
+                       id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                       year      INTEGER NOT NULL UNIQUE,
+                       country   TEXT    NOT NULL,
+                       city      TEXT,
+                       date_from TEXT,
+                       date_to   TEXT,
+                       notes     TEXT,
+                       added_by  INTEGER NOT NULL,
+                       added_at  TEXT    NOT NULL
+                   );
+
+                   INSERT INTO trips_rebuilt
+                   SELECT id, year, country, city, date_from, date_to, notes, added_by, added_at
+                   FROM trips WHERE id IN (SELECT MIN(id) FROM trips GROUP BY year);
+
+                   -- Matches of a discarded duplicate move to the kept trip for
+                   -- that year rather than being orphaned.
+                   UPDATE trip_matches SET trip_id = (
+                       SELECT MIN(keeper.id) FROM trips keeper
+                       WHERE keeper.year = (
+                           SELECT old.year FROM trips old WHERE old.id = trip_matches.trip_id
+                       )
+                   )
+                   WHERE trip_id NOT IN (SELECT id FROM trips_rebuilt);
+
+                   DROP TABLE trips;
+                   ALTER TABLE trips_rebuilt RENAME TO trips;
+                   CREATE INDEX IF NOT EXISTS idx_trips_year ON trips(year);"""
+            )
+            broken = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if broken:
+                conn.rollback()
+                log.error("trips rebuild left %d dangling reference(s), rolled back", len(broken))
+                return
+            conn.commit()
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
+
+        for duplicate in merged:
+            log.warning(
+                "%s had %d trips recorded; merged into one and kept its matches",
+                duplicate["year"],
+                duplicate["n"],
+            )
+        log.info("trips re-keyed on year")
 
     def _migrate_guild_config(self) -> None:
         """Move the old column-per-kind guild_config into guild_channels.
@@ -403,37 +506,48 @@ class Database:
         notes: str | None = None,
         added_by: int,
     ) -> int:
-        """Insert or amend a trip, returning its id.
+        """Insert or amend the trip for a year, returning its id.
 
-        Re-adding the same (year, country) fills in the fields you supply and
-        leaves the rest alone, so correcting a typo in the city cannot silently
-        wipe the notes.
+        The year is the key — one place a year — so re-adding 2014 with a
+        different country corrects that trip rather than creating a second one.
+        Only the fields you supply are written; the rest are left alone, so
+        correcting a typo in the city cannot silently wipe the notes.
         """
         self.execute(
             """INSERT INTO trips (year, country, city, date_from, date_to, notes,
                                   added_by, added_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(year, country) DO UPDATE SET
+               ON CONFLICT(year) DO UPDATE SET
+                   country=COALESCE(excluded.country, trips.country),
                    city=COALESCE(excluded.city, trips.city),
                    date_from=COALESCE(excluded.date_from, trips.date_from),
                    date_to=COALESCE(excluded.date_to, trips.date_to),
                    notes=COALESCE(excluded.notes, trips.notes)""",
             (year, country, city, date_from, date_to, notes, added_by, utcnow_iso()),
         )
-        row = self.query_one("SELECT id FROM trips WHERE year=? AND country=?", (year, country))
+        row = self.trip_by_year(year)
         assert row is not None
         return row["id"]
 
+    def trip_by_year(self, year: int) -> sqlite3.Row | None:
+        return self.query_one("SELECT * FROM trips WHERE year=?", (year,))
+
     def trip_match_rows(self, *, trip_id: int | None = None) -> list[sqlite3.Row]:
-        """Matches with their trip's year and country joined on, newest last.
+        """Matches with their trip's year, country and city joined on.
 
         Every stats function takes rows in this shape, so there is one query to
-        keep correct rather than one per statistic.
+        keep correct rather than one per statistic. `city` is the match's own
+        when it has one and the trip's otherwise, so no consumer has to repeat
+        that fallback; `trip_city` stays available for telling the two apart.
         """
         clause = " WHERE m.trip_id=?" if trip_id is not None else ""
         params = (trip_id,) if trip_id is not None else ()
         return self.query(
-            f"""SELECT m.*, t.year AS year, t.country AS country, t.city AS trip_city
+            f"""SELECT m.id, m.trip_id, m.match_date, m.competition, m.home, m.away,
+                       m.home_goals, m.away_goals, m.stadium, m.attendance, m.notes,
+                       m.city AS match_city,
+                       t.year AS year, t.country AS country, t.city AS trip_city,
+                       COALESCE(m.city, t.city) AS city
                 FROM trip_matches m JOIN trips t ON t.id = m.trip_id{clause}
                 ORDER BY t.year, m.match_date, m.id""",
             params,

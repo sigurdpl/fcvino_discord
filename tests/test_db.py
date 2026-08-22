@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from bot.db import SCHEMA_VERSION, parse_utc, sql_str_tuple
+import sqlite3
+
+from bot.db import SCHEMA_VERSION, Database, parse_utc, sql_str_tuple
 
 MATCH = {
     "match_id": 500,
@@ -132,3 +134,107 @@ def test_sql_str_tuple_renders_valid_sql_for_any_length(db):
     assert sql_str_tuple(("A",)) == "('A')"
     # The point of the helper: it has to survive being interpolated into SQL.
     db.query(f"SELECT * FROM matches WHERE status IN {sql_str_tuple(('TIMED',))}")
+
+
+# -- re-keying trips on year ------------------------------------------------
+
+
+def _old_shape_trips_db(path):
+    """A database as it was before trips were keyed on year alone."""
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """CREATE TABLE trips (
+               id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER NOT NULL,
+               country TEXT NOT NULL, city TEXT, date_from TEXT, date_to TEXT,
+               notes TEXT, added_by INTEGER NOT NULL, added_at TEXT NOT NULL,
+               UNIQUE (year, country));
+           CREATE TABLE trip_matches (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+               match_date TEXT, competition TEXT, home TEXT NOT NULL, away TEXT NOT NULL,
+               home_goals INTEGER, away_goals INTEGER, stadium TEXT, attendance INTEGER,
+               notes TEXT);
+           CREATE TABLE trip_goals (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               trip_match_id INTEGER NOT NULL REFERENCES trip_matches(id) ON DELETE CASCADE,
+               minute INTEGER, scorer TEXT NOT NULL, side TEXT);
+           INSERT INTO trips VALUES (1, 2014, 'Germany', 'Dortmund', NULL, NULL, 'keep me', 7, 'x');
+           INSERT INTO trips VALUES (2, 2014, 'Netherlands', 'Amsterdam', NULL,NULL,NULL, 7, 'x');
+           INSERT INTO trips VALUES (3, 2016, 'Italy', 'Rome', NULL, NULL, NULL, 7, 'x');
+           INSERT INTO trip_matches VALUES
+               (1, 1, NULL, NULL, 'Dortmund', 'Bayern', 0, 3, 'Signal Iduna', NULL, NULL);
+           INSERT INTO trip_matches
+               VALUES (2, 2, NULL, NULL, 'Ajax', 'Feyenoord', 2, 1, 'Arena', NULL, NULL);
+           INSERT INTO trip_goals VALUES (1, 2, 23, 'Suarez', 'H');"""
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_trips_are_rekeyed_on_year_and_duplicates_merged(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    _old_shape_trips_db(path)
+
+    db = Database(path)
+    db.connect()
+    try:
+        years = [r["year"] for r in db.query("SELECT year FROM trips ORDER BY year")]
+        assert years == [2014, 2016], "one trip per year after the rebuild"
+        kept = db.trip_by_year(2014)
+        assert (kept["country"], kept["notes"]) == ("Germany", "keep me")
+    finally:
+        db.close()
+
+
+def test_the_merged_trips_matches_are_re_pointed_not_orphaned(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    _old_shape_trips_db(path)
+
+    db = Database(path)
+    db.connect()
+    try:
+        kept = db.trip_by_year(2014)
+        homes = [r["home"] for r in db.trip_match_rows(trip_id=kept["id"])]
+        assert sorted(homes) == ["Ajax", "Dortmund"], "the duplicate's match came along"
+        assert db.query_one("SELECT COUNT(*) AS n FROM trip_goals")["n"] == 1
+        assert db.query("PRAGMA foreign_key_check") == []
+    finally:
+        db.close()
+
+
+def test_the_rebuild_adds_the_city_column_and_re_running_is_a_no_op(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    _old_shape_trips_db(path)
+
+    db = Database(path)
+    db.connect()
+    try:
+        assert "city" in {r["name"] for r in db.query("PRAGMA table_info(trip_matches)")}
+        before = db.query("SELECT * FROM trips")
+        db.migrate()
+        assert [dict(r) for r in db.query("SELECT * FROM trips")] == [dict(r) for r in before]
+        assert db.query_one("PRAGMA user_version")[0] == SCHEMA_VERSION
+    finally:
+        db.close()
+
+
+def test_foreign_keys_are_enforced_again_after_the_rebuild(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    _old_shape_trips_db(path)
+
+    db = Database(path)
+    db.connect()
+    try:
+        assert db.query_one("PRAGMA foreign_keys")[0] == 1
+        # And the cascade still works, which is what foreign keys are here for.
+        db.execute("DELETE FROM trips")
+        assert db.query("SELECT * FROM trip_matches") == []
+    finally:
+        db.close()
+
+
+def test_a_year_can_only_hold_one_trip(db):
+    db.upsert_trip(year=2019, country="Spain", added_by=1)
+    db.upsert_trip(year=2019, country="Portugal", added_by=1)
+    rows = db.query("SELECT * FROM trips")
+    assert len(rows) == 1 and rows[0]["country"] == "Portugal"

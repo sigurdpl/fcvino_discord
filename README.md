@@ -125,21 +125,30 @@ Bottle names autocomplete, so nobody types database ids.
 
 ### ✈️ Trips
 
-The away-trip archive: one match abroad a year since 2010.
+The away-trip archive: one place a year since 2010, and every match we saw while there.
 
 | Command | What it does |
 |---|---|
-| `/trips add` | Record a year's trip: country, city, dates, notes. Re-run it to amend — supplying a city won't wipe the notes |
-| `/trips add-match` | The match we saw: teams, score, competition, ground, crowd |
+| `/trips add` | Record a year's trip: country, city, dates, notes. One trip per year, so re-running it amends that year — supplying a city won't wipe the notes |
+| `/trips add-match` | A match we saw: `year:2014`, teams, score, competition, ground, crowd, and a `city` if that game was somewhere else |
 | `/trips add-goals` | Scorers for one match in a single field: `23 Robben A, 45 Mueller A` — minute, scorer, then H or A |
-| `/trips list` | Every trip in order |
-| `/trips show` | One trip in full, scorers included |
-| `/trips stats` | Countries, grounds, goals, results, clubs, streaks — "how many countries have we seen" |
+| `/trips list` | Every trip in order, flagging the ones with more than one match |
+| `/trips show` | One year in full: every match, its ground and city, and who scored |
+| `/trips stats` | Countries, cities, grounds, goals, results, clubs, streaks — "how many countries have we seen" |
 | `/trips countries` | Each country with visit count and years |
 | `/trips teams` | Every club seen, repeats flagged, competitions |
 | `/trips search` | By team, country, city or ground |
 | `/trips random` | One trip at random |
 | `/trips missing` | What still needs filling in |
+| `/trips remove-match` | Delete one match, keeping the trip and its other matches |
+| `/trips remove` | Delete a whole trip and every match on it |
+
+**One place a year, sometimes more than one match.** The year identifies a trip — that's
+why the commands take `year:2014` rather than a name to disambiguate. A trip holds as many
+matches as you saw, so `/trips add-match year:2014` twice gives you both, and each match
+can carry its own `city` for a Ruhr-style trip taking in Dortmund one day and
+Gelsenkirchen the next. Leave `city` blank and the match inherits the trip's, so a London
+double-header needs no repetition.
 
 **Why this is typed in rather than fetched.** The football-data.org free tier has no
 match data before the 2023/24 season, covers only 12 competitions, and returns no venue,

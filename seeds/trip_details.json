@@ -7,7 +7,8 @@
     "results. Keeping them here means the archive survives a lost database: enter the",
     "trips once, and this file can rebuild every detail on any machine.",
     "",
-    "Match a trip on year + country. Every field except year and country is optional;",
+    "Trips are matched on year alone — we go one place a year. Every other field is",
+    "optional, including country, which the pass can correct like any other column;",
     "the script fills only columns that are currently empty unless you pass --overwrite,",
     "so nothing you typed in Discord gets clobbered.",
     "",
@@ -36,6 +37,18 @@
         "attendance": 80667,
         "goals": ["23 Robben A", "45 Mueller A", "67 Goetze A"],
         "source": "https://example.org/match-report"
+      },
+      {
+        "match_date": "2014-04-27",
+        "competition": "Bundesliga",
+        "home": "Schalke 04",
+        "away": "FC Koeln",
+        "home_goals": 1,
+        "away_goals": 1,
+        "city": "Gelsenkirchen",
+        "stadium": "Veltins-Arena",
+        "goals": ["12 Huntelaar H", "70 Someone A"],
+        "source": "https://example.org/second-match"
       }
     ]
   },

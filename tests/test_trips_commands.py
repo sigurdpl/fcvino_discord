@@ -110,7 +110,7 @@ def test_add_match_attaches_to_the_trip_and_flags_what_is_missing(cog, db):
     call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany")
     response = call(
         Trips.add_match, cog, FakeInteraction(),
-        trip="2014", home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
+        year=2014, home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
     )
     text = response.text()
     assert "Dortmund **0–3** Bayern" in text
@@ -122,18 +122,29 @@ def test_add_match_says_nothing_is_missing_when_it_is_complete(cog, db):
     call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany")
     response = call(
         Trips.add_match, cog, FakeInteraction(),
-        trip="2014", home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
-        match_date="2014-04-26", competition="Bundesliga", stadium="Signal Iduna Park",
-        attendance=80667,
+        year=2014, home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
+        match_date="2014-04-26", competition="Bundesliga", city="Dortmund",
+        stadium="Signal Iduna Park", attendance=80667,
     )
     assert "Still missing" not in response.text()
 
 
+def test_a_match_inherits_the_trips_city_rather_than_reporting_it_missing(cog, db):
+    call(Trips.add, cog, FakeInteraction(), year=2015, country="England", city="London")
+    response = call(
+        Trips.add_match, cog, FakeInteraction(),
+        year=2015, home="Arsenal", away="Chelsea", home_goals=1, away_goals=0,
+        match_date="2015-04-26", competition="Premier League", stadium="Emirates",
+        attendance=60000,
+    )
+    assert "Still missing" not in response.text(), "the trip's city should count"
+
+
 def test_add_match_refuses_when_the_trip_does_not_exist(cog, db):
     response = call(
-        Trips.add_match, cog, FakeInteraction(), trip="1999", home="A", away="B"
+        Trips.add_match, cog, FakeInteraction(), year=1999, home="A", away="B"
     )
-    assert "add it with `/trips add` first" in response.text()
+    assert "No 1999 trip yet" in response.text()
     assert db.query("SELECT * FROM trip_matches") == []
 
 
@@ -144,7 +155,7 @@ def _trip_with_match(cog, db):
     call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany")
     call(
         Trips.add_match, cog, FakeInteraction(),
-        trip="2014", home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
+        year=2014, home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
     )
     return db.query_one("SELECT * FROM trip_matches")["id"]
 
@@ -227,7 +238,7 @@ def test_stats_reports_goals_results_and_the_streak(cog, db):
         call(Trips.add, cog, FakeInteraction(), year=year, country=country)
         call(
             Trips.add_match, cog, FakeInteraction(),
-            trip=str(year), home=home, away=away, home_goals=hg, away_goals=ag,
+            year=year, home=home, away=away, home_goals=hg, away_goals=ag,
         )
     text = call(Trips.trip_statistics, cog, FakeInteraction()).text()
     assert "**10** goals" in text
@@ -254,8 +265,8 @@ def test_countries_lists_each_country_with_its_years(cog, db):
 def test_teams_flags_a_club_seen_twice(cog, db):
     call(Trips.add, cog, FakeInteraction(), year=2014, country="England")
     call(Trips.add, cog, FakeInteraction(), year=2015, country="England")
-    call(Trips.add_match, cog, FakeInteraction(), trip="2014", home="Arsenal", away="Chelsea")
-    call(Trips.add_match, cog, FakeInteraction(), trip="2015", home="Chelsea", away="Spurs")
+    call(Trips.add_match, cog, FakeInteraction(), year=2014, home="Arsenal", away="Chelsea")
+    call(Trips.add_match, cog, FakeInteraction(), year=2015, home="Chelsea", away="Spurs")
     text = call(Trips.teams, cog, FakeInteraction()).text()
     assert "Seen more than once" in text and "**Chelsea** — 2×" in text
 
@@ -263,17 +274,17 @@ def test_teams_flags_a_club_seen_twice(cog, db):
 def test_show_renders_the_trip_in_full(cog, db):
     match_id = _trip_with_match(cog, db)
     call(Trips.add_goals, cog, FakeInteraction(), match=str(match_id), goals="23 Robben A")
-    text = call(Trips.show, cog, FakeInteraction(), trip="2014").text()
+    text = call(Trips.show, cog, FakeInteraction(), year=2014).text()
     assert "2014" in text and "Germany" in text and "23' Robben (A)" in text
 
 
 def test_missing_lists_the_gaps_then_goes_quiet_once_filled(cog, db):
-    call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany")
+    call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany", city="Dortmund")
     assert "no match recorded" in call(Trips.missing, cog, FakeInteraction()).text()
 
     call(
         Trips.add_match, cog, FakeInteraction(),
-        trip="2014", home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
+        year=2014, home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
         match_date="2014-04-26", competition="Bundesliga", stadium="Signal Iduna Park",
         attendance=80667,
     )
@@ -288,7 +299,7 @@ def test_search_finds_a_trip_by_ground(cog, db):
     call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany")
     call(
         Trips.add_match, cog, FakeInteraction(),
-        trip="2014", home="Dortmund", away="Bayern", stadium="Signal Iduna Park",
+        year=2014, home="Dortmund", away="Bayern", stadium="Signal Iduna Park",
     )
     assert "Dortmund" in call(Trips.search, cog, FakeInteraction(), query="iduna").text()
 
@@ -298,19 +309,90 @@ def test_search_says_so_when_nothing_matches(cog, db):
     assert "Nothing matches" in call(Trips.search, cog, FakeInteraction(), query="zzz").text()
 
 
+# -- more than one match on a trip ------------------------------------------
+
+
+def _two_match_trip(cog, db):
+    call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany", city="Dortmund")
+    first = call(
+        Trips.add_match, cog, FakeInteraction(),
+        year=2014, home="Dortmund", away="Bayern", home_goals=0, away_goals=3,
+        match_date="2014-04-26", stadium="Signal Iduna Park",
+    ).text()
+    second = call(
+        Trips.add_match, cog, FakeInteraction(),
+        year=2014, home="Schalke", away="Koeln", home_goals=1, away_goals=1,
+        match_date="2014-04-27", city="Gelsenkirchen", stadium="Veltins-Arena",
+    ).text()
+    return first, second
+
+
+def test_a_second_match_is_added_to_the_same_trip_and_numbered(cog, db):
+    first, second = _two_match_trip(cog, db)
+    assert "of 2" not in first, "the first match needs no numbering"
+    assert "match 2 of 2" in second
+    assert db.query_one("SELECT COUNT(*) AS n FROM trips")["n"] == 1
+    assert db.query_one("SELECT COUNT(*) AS n FROM trip_matches")["n"] == 2
+
+
+def test_both_matches_on_a_trip_count_towards_the_stats(cog, db):
+    _two_match_trip(cog, db)
+    text = call(Trips.trip_statistics, cog, FakeInteraction()).text()
+    assert "**1** trips" in text
+    assert "**2** matches" in text
+    assert "**5** goals" in text          # 0-3 plus 1-1
+    assert "**2** cities" in text         # Dortmund and Gelsenkirchen
+    assert "**2** different grounds" in text
+
+
+def test_show_lists_every_match_and_names_the_second_city(cog, db):
+    _two_match_trip(cog, db)
+    text = call(Trips.show, cog, FakeInteraction(), year=2014).text()
+    assert "Dortmund **0–3** Bayern" in text
+    assert "Schalke **1–1** Koeln" in text
+    assert "Gelsenkirchen" in text
+    assert text.count("Signal Iduna Park") == 1
+
+
+def test_list_flags_a_trip_with_more_than_one_match(cog, db):
+    _two_match_trip(cog, db)
+    assert "(2 matches)" in call(Trips.list_trips, cog, FakeInteraction()).text()
+
+
+def test_remove_match_deletes_one_and_leaves_the_trip_and_the_other(cog, db):
+    _two_match_trip(cog, db)
+    doomed = db.query_one("SELECT id FROM trip_matches WHERE home='Schalke'")["id"]
+    call(Trips.add_goals, cog, FakeInteraction(), match=str(doomed), goals="12 Huntelaar H")
+
+    response = call(Trips.remove_match, cog, FakeInteraction(user_id=1), match=str(doomed))
+    text = response.text()
+    assert "Removed" in text and "1 match(es) still on that trip" in text
+    assert [r["home"] for r in db.query("SELECT * FROM trip_matches")] == ["Dortmund"]
+    assert db.query("SELECT * FROM trip_goals") == [], "its goals go with it"
+    assert db.query_one("SELECT COUNT(*) AS n FROM trips")["n"] == 1
+
+
+def test_remove_match_refuses_someone_elses_trip(cog, db):
+    _two_match_trip(cog, db)
+    match_id = db.query_one("SELECT id FROM trip_matches")["id"]
+    response = call(Trips.remove_match, cog, FakeInteraction(user_id=999), match=str(match_id))
+    assert "ask them" in response.text()
+    assert db.query_one("SELECT COUNT(*) AS n FROM trip_matches")["n"] == 2
+
+
 # -- removing ---------------------------------------------------------------
 
 
 def test_remove_deletes_your_own_trip_and_its_matches(cog, db):
     _trip_with_match(cog, db)
-    response = call(Trips.remove, cog, FakeInteraction(user_id=1), trip="2014")
-    assert "Removed" in response.text()
+    response = call(Trips.remove, cog, FakeInteraction(user_id=1), year=2014)
+    assert "Removed" in response.text() and "1 match(es)" in response.text()
     assert db.query("SELECT * FROM trips") == []
     assert db.query("SELECT * FROM trip_matches") == []
 
 
 def test_remove_refuses_someone_elses_trip(cog, db):
     call(Trips.add, cog, FakeInteraction(user_id=1), year=2014, country="Germany")
-    response = call(Trips.remove, cog, FakeInteraction(user_id=999), trip="2014")
+    response = call(Trips.remove, cog, FakeInteraction(user_id=999), year=2014)
     assert "ask them" in response.text()
     assert len(db.query("SELECT * FROM trips")) == 1

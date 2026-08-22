@@ -24,8 +24,8 @@ def add_trip(db, year, country, city=None, added_by=1):
 def add_match(db, trip_id, home, away, hg=None, ag=None, **extra):
     return db.execute(
         """INSERT INTO trip_matches (trip_id, match_date, competition, home, away,
-                                     home_goals, away_goals, stadium, attendance)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     home_goals, away_goals, city, stadium, attendance)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             trip_id,
             extra.get("match_date"),
@@ -34,6 +34,7 @@ def add_match(db, trip_id, home, away, hg=None, ag=None, **extra):
             away,
             hg,
             ag,
+            extra.get("city"),
             extra.get("stadium"),
             extra.get("attendance"),
         ),
@@ -68,37 +69,24 @@ def test_all_trips_is_ordered_by_year(cog, db):
     assert [t["year"] for t in cog._all_trips()] == [2010, 2016]
 
 
-def test_two_trips_in_one_year_to_different_countries_both_survive(cog, db):
-    add_trip(db, 2019, "Spain")
-    add_trip(db, 2019, "Portugal")
-    assert len(cog._all_trips()) == 2
+def test_a_year_holds_one_trip_and_re_adding_corrects_the_country(cog, db):
+    # We go one place a year, so 2019 cannot be both Spain and Portugal.
+    first = add_trip(db, 2019, "Spain")
+    second = add_trip(db, 2019, "Portugal")
+    assert first == second
+    trips = cog._all_trips()
+    assert len(trips) == 1 and trips[0]["country"] == "Portugal"
 
 
-def test_resolve_trip_by_autocomplete_id(cog, db):
+def test_a_trip_is_found_by_its_year(cog, db):
     trip_id = add_trip(db, 2014, "Germany")
-    assert cog._resolve_trip(str(trip_id))["id"] == trip_id
+    found = cog._trip_for_year(2014)
+    assert found is not None and found["id"] == trip_id
 
 
-def test_resolve_trip_by_year_when_typed_freehand(cog, db):
+def test_a_year_with_no_trip_resolves_to_nothing(cog, db):
     add_trip(db, 2014, "Germany")
-    assert cog._resolve_trip("2014")["country"] == "Germany"
-
-
-def test_resolve_trip_by_country_or_city(cog, db):
-    add_trip(db, 2014, "Germany", city="Dortmund")
-    assert cog._resolve_trip("germ")["year"] == 2014
-    assert cog._resolve_trip("dortm")["year"] == 2014
-
-
-def test_resolve_trip_returns_none_when_nothing_matches(cog, db):
-    add_trip(db, 2014, "Germany")
-    assert cog._resolve_trip("Atlantis") is None
-
-
-def test_a_year_that_is_not_a_trip_id_still_resolves_by_year(cog, db):
-    # ids start at 1, so "2014" is a year here, not an id — the fallback matters.
-    add_trip(db, 2014, "Germany")
-    assert cog._resolve_trip("2014") is not None
+    assert cog._trip_for_year(2013) is None
 
 
 # -- matches and goals ------------------------------------------------------
@@ -161,25 +149,37 @@ def test_country_autocomplete_filters_on_what_is_typed(cog, db):
     assert [c.value for c in choices] == ["Germany"]
 
 
-def test_trip_autocomplete_shows_newest_first_and_carries_the_id(cog, db):
-    old = add_trip(db, 2010, "England")
-    new = add_trip(db, 2014, "Germany", city="Dortmund")
-    choices = asyncio.run(cog.trip_autocomplete(None, ""))
-    assert [c.value for c in choices] == [str(new), str(old)]
+def test_year_autocomplete_shows_newest_first_and_carries_the_year(cog, db):
+    add_trip(db, 2010, "England")
+    add_trip(db, 2014, "Germany", city="Dortmund")
+    choices = asyncio.run(cog.year_autocomplete(None, ""))
+    assert [c.value for c in choices] == [2014, 2010]
     assert "Dortmund" in choices[0].name
 
 
-def test_match_autocomplete_labels_with_the_year(cog, db):
+def test_match_autocomplete_labels_with_the_year_and_score(cog, db):
     trip_id = add_trip(db, 2016, "Italy")
     add_match(db, trip_id, "Roma", "Lazio", 4, 3)
     choices = asyncio.run(cog.match_autocomplete(None, "roma"))
     assert len(choices) == 1
-    assert choices[0].name.startswith("2016 · Roma vs Lazio")
+    assert choices[0].name.startswith("2016 · Roma 4–3 Lazio")
+
+
+def test_match_autocomplete_distinguishes_two_matches_on_one_trip(cog, db):
+    trip_id = add_trip(db, 2014, "Germany", city="Dortmund")
+    add_match(db, trip_id, "Dortmund", "Bayern", 0, 3, match_date="2014-04-26")
+    add_match(db, trip_id, "Schalke", "Koeln", 1, 1, match_date="2014-04-27",
+              city="Gelsenkirchen")
+    labels = [c.name for c in asyncio.run(cog.match_autocomplete(None, ""))]
+    assert len(labels) == 2
+    assert len(set(labels)) == 2, "two games on one trip must be tellable apart"
+    assert any("Gelsenkirchen" in label for label in labels)
+    assert all("2014-04-2" in label for label in labels)
 
 
 def test_autocompletes_are_empty_rather_than_broken_on_a_fresh_database(cog):
     assert asyncio.run(cog.country_autocomplete(None, "")) == []
-    assert asyncio.run(cog.trip_autocomplete(None, "")) == []
+    assert asyncio.run(cog.year_autocomplete(None, "")) == []
     assert asyncio.run(cog.match_autocomplete(None, "")) == []
 
 
@@ -246,6 +246,21 @@ def test_trip_match_rows_join_the_year_and_country_on(db):
     add_match(db, trip_id, "Dortmund", "Bayern", 0, 3)
     row = db.trip_match_rows()[0]
     assert (row["year"], row["country"], row["trip_city"]) == (2014, "Germany", "Dortmund")
+
+
+def test_a_match_without_its_own_city_inherits_the_trips(db):
+    trip_id = add_trip(db, 2015, "England", city="London")
+    add_match(db, trip_id, "Arsenal", "Chelsea", 1, 0)
+    row = db.trip_match_rows()[0]
+    assert row["city"] == "London"
+    assert row["match_city"] is None, "the fallback must stay distinguishable"
+
+
+def test_a_match_with_its_own_city_keeps_it(db):
+    trip_id = add_trip(db, 2014, "Germany", city="Dortmund")
+    add_match(db, trip_id, "Schalke", "Koeln", 1, 1, city="Gelsenkirchen")
+    row = db.trip_match_rows()[0]
+    assert (row["city"], row["match_city"]) == ("Gelsenkirchen", "Gelsenkirchen")
 
 
 def test_trip_match_rows_can_be_scoped_to_one_trip(db):

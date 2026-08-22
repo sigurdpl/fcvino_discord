@@ -51,7 +51,7 @@ def test_without_create_an_unknown_trip_is_reported_not_invented(db):
     report = apply_seed(db, seed())
     assert report.changes == 0
     assert db.query("SELECT * FROM trips") == []
-    assert any("no such trip" in p for p in report.problems)
+    assert any("no 2014 trip" in p for p in report.problems)
 
 
 def test_create_inserts_the_trip_the_match_and_the_scorers(db):
@@ -70,6 +70,58 @@ def test_create_inserts_the_trip_the_match_and_the_scorers(db):
 def test_country_is_normalised_on_the_way_in(db):
     apply_seed(db, seed(country="germany"), create=True)
     assert only_trip(db)["country"] == "Germany"
+
+
+def test_a_trip_is_matched_on_year_even_if_the_country_was_wrong(db):
+    # One place a year, so the year identifies the trip and the country is just
+    # another column the research pass can correct.
+    db.upsert_trip(year=2014, country="Austria", added_by=1)
+    report = apply_seed(db, seed(), create=True, overwrite=True)
+    assert report.problems == []
+    assert db.query_one("SELECT COUNT(*) AS n FROM trips")["n"] == 1
+    assert only_trip(db)["country"] == "Germany"
+
+
+def test_a_per_match_city_is_applied(db):
+    payload = seed()
+    payload["trips"][0]["matches"][0]["city"] = "Gelsenkirchen"
+    apply_seed(db, payload, create=True)
+    assert only_match(db)["city"] == "Gelsenkirchen"
+
+
+def test_a_second_match_on_the_same_trip_is_created_alongside_the_first(db):
+    payload = seed()
+    payload["trips"][0]["matches"].append(
+        {
+            "match_date": "2014-04-27",
+            "home": "Schalke 04",
+            "away": "FC Koeln",
+            "home_goals": 1,
+            "away_goals": 1,
+            "city": "Gelsenkirchen",
+            "goals": ["12 Huntelaar H"],
+        }
+    )
+    report = apply_seed(db, payload, create=True)
+    assert report.problems == []
+    assert db.query_one("SELECT COUNT(*) AS n FROM trips")["n"] == 1
+    assert [r["home"] for r in db.query("SELECT * FROM trip_matches ORDER BY match_date")] == [
+        "Borussia Dortmund",
+        "Schalke 04",
+    ]
+    assert db.query_one("SELECT COUNT(*) AS n FROM trip_goals")["n"] == 3
+
+
+def test_two_matches_are_each_matched_to_their_own_row_on_re_run(db):
+    payload = seed()
+    payload["trips"][0]["matches"].append(
+        {"match_date": "2014-04-27", "home": "Schalke 04", "away": "FC Koeln",
+         "home_goals": 1, "away_goals": 1, "stadium": "Veltins-Arena"}
+    )
+    apply_seed(db, payload, create=True)
+    second = apply_seed(db, payload, create=True)
+    assert second.changes == 0, "the single-match fallback must not confuse two matches"
+    assert db.query_one("SELECT COUNT(*) AS n FROM trip_matches")["n"] == 2
 
 
 def test_a_seeded_row_is_marked_as_not_belonging_to_a_person(db):

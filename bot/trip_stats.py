@@ -55,6 +55,16 @@ def distinct_stadiums(matches: Sequence[Row]) -> list[str]:
     return sorted({m["stadium"] for m in matches if m["stadium"]}, key=str.lower)
 
 
+def distinct_cities(matches: Sequence[Row]) -> list[str]:
+    """Cities we have watched football in.
+
+    Reads the `city` from `Database.trip_match_rows`, which is already the
+    match's own city or the trip's, so a trip taking in two cities counts twice
+    and a London double-header counts once.
+    """
+    return sorted({m["city"] for m in matches if m["city"]}, key=str.lower)
+
+
 def total_attendance(matches: Sequence[Row]) -> int | None:
     """Combined attendance, or None if no match has it recorded."""
     values = [m["attendance"] for m in matches if m["attendance"]]
@@ -180,6 +190,8 @@ def missing_detail(match: Row) -> list[str]:
         gaps.append("competition")
     if match["home_goals"] is None or match["away_goals"] is None:
         gaps.append("score")
+    if not match["city"]:
+        gaps.append("city")
     if not match["stadium"]:
         gaps.append("stadium")
     if not match["attendance"]:

@@ -24,6 +24,7 @@ def match(
     attendance=None,
     match_date=None,
     country="Germany",
+    city=None,
 ):
     return {
         "id": year,
@@ -31,6 +32,8 @@ def match(
         "year": year,
         "country": country,
         "trip_city": None,
+        "city": city,
+        "match_city": city,
         "home": home,
         "away": away,
         "home_goals": home_goals,
@@ -99,6 +102,27 @@ def test_distinct_stadiums_ignores_blanks_and_duplicates():
         match(2016, "e", "f", stadium=None),
     ]
     assert stats.distinct_stadiums(rows) == ["Emirates"]
+
+
+def test_distinct_cities_counts_a_two_city_trip_twice():
+    # One trip, two cities — the Ruhr case that put city on the match.
+    rows = [
+        match(2014, "Dortmund", "Bayern", city="Dortmund"),
+        match(2014, "Schalke", "Koeln", city="Gelsenkirchen"),
+    ]
+    assert stats.distinct_cities(rows) == ["Dortmund", "Gelsenkirchen"]
+
+
+def test_distinct_cities_counts_a_double_header_in_one_city_once():
+    rows = [
+        match(2015, "Arsenal", "Chelsea", city="London"),
+        match(2015, "Spurs", "Fulham", city="London"),
+    ]
+    assert stats.distinct_cities(rows) == ["London"]
+
+
+def test_distinct_cities_ignores_matches_with_no_city_anywhere():
+    assert stats.distinct_cities([match(2018, "Celtic", "Rangers")]) == []
 
 
 def test_total_attendance_sums_what_is_known_and_is_none_when_nothing_is():
@@ -225,6 +249,7 @@ def test_missing_detail_lists_every_empty_field():
         "date",
         "competition",
         "score",
+        "city",
         "stadium",
         "attendance",
     ]
@@ -241,6 +266,7 @@ def test_missing_detail_is_empty_for_a_complete_match():
         competition="Bundesliga",
         attendance=80667,
         match_date="2014-04-26",
+        city="Dortmund",
     )
     assert stats.missing_detail(complete) == []
 
