@@ -329,3 +329,36 @@ def test_a_broken_channel_does_not_break_the_command(cog, db, channel):
     assert "Recorded" in (response.messages[-1][0] or ""), "the trip was still saved"
     assert db.query_one("SELECT COUNT(*) AS n FROM trips")["n"] == 1
     assert db.get_bot_message(GUILD_ID, "trips") is None
+
+
+# -- edits reach the pinned copy --------------------------------------------
+
+
+def test_correcting_a_score_updates_the_pinned_copy(cog, db, channel):
+    db.set_channel(GUILD_ID, "trips", CHANNEL_ID)
+    add_trip(cog)
+    add_match(cog, hg=1, ag=0)
+    existing = channel.fetch_message.return_value
+    existing.edit.reset_mock()
+
+    match_id = db.query_one("SELECT id FROM trip_matches")["id"]
+    call(Trips.edit_match, cog, match=str(match_id), home_goals=0, away_goals=3)
+
+    assert existing.edit.await_count == 1
+    assert "0–3" in text_of(embed_of(existing.edit.call_args))
+
+
+def test_editing_something_the_list_does_not_show_leaves_it_alone(cog, db, channel):
+    # The list shows fixtures and scores, not crowds — so the rendered text is
+    # unchanged and the fingerprint correctly declines to re-edit.
+    db.set_channel(GUILD_ID, "trips", CHANNEL_ID)
+    add_trip(cog)
+    add_match(cog)
+    existing = channel.fetch_message.return_value
+    existing.edit.reset_mock()
+
+    match_id = db.query_one("SELECT id FROM trip_matches")["id"]
+    call(Trips.edit_match, cog, match=str(match_id), attendance=80667)
+
+    assert existing.edit.await_count == 0
+    assert db.query_one("SELECT attendance FROM trip_matches")["attendance"] == 80667

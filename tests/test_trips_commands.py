@@ -396,3 +396,114 @@ def test_remove_refuses_someone_elses_trip(cog, db):
     response = call(Trips.remove, cog, FakeInteraction(user_id=999), year=2014)
     assert "ask them" in response.text()
     assert len(db.query("SELECT * FROM trips")) == 1
+
+
+# -- correcting a match without destroying it -------------------------------
+
+
+def _match_with_scorers(cog, db):
+    call(Trips.add, cog, FakeInteraction(), year=2014, country="Germany", city="Dortmund")
+    call(
+        Trips.add_match, cog, FakeInteraction(),
+        year=2014, home="Dortmund", away="Bayern", home_goals=1, away_goals=0,
+        match_date="2014-04-26", competition="Bundesliga", stadium="Signal Iduna Park",
+        attendance=80667,
+    )
+    match_id = db.query_one("SELECT id FROM trip_matches")["id"]
+    call(
+        Trips.add_goals, cog, FakeInteraction(),
+        match=str(match_id), goals="23 Robben A, 45 Mueller A",
+    )
+    return match_id
+
+
+def test_edit_match_changes_only_what_you_supply(cog, db):
+    match_id = _match_with_scorers(cog, db)
+    response = call(
+        Trips.edit_match, cog, FakeInteraction(), match=str(match_id), home_goals=0, away_goals=3
+    )
+    assert "Updated away_goals, home_goals" in response.text()
+    row = db.query_one("SELECT * FROM trip_matches")
+    assert (row["home_goals"], row["away_goals"]) == (0, 3)
+    assert row["stadium"] == "Signal Iduna Park", "untouched fields stay put"
+    assert row["attendance"] == 80667
+    assert row["competition"] == "Bundesliga"
+    assert row["match_date"] == "2014-04-26"
+
+
+def test_edit_match_keeps_the_scorers(cog, db):
+    # The reason this command exists: trip_goals cascades off trip_matches, so
+    # remove-and-re-add would take the scorers with it.
+    match_id = _match_with_scorers(cog, db)
+    response = call(
+        Trips.edit_match, cog, FakeInteraction(), match=str(match_id), home_goals=0, away_goals=3
+    )
+    assert [r["scorer"] for r in db.query("SELECT * FROM trip_goals ORDER BY minute")] == [
+        "Robben",
+        "Mueller",
+    ]
+    assert "2 scorer(s) kept" in response.text()
+
+
+def test_editing_a_score_to_nil_nil_is_not_read_as_no_input(cog, db):
+    # 0 is falsy; a truthiness check here would silently ignore the edit.
+    match_id = _match_with_scorers(cog, db)
+    call(Trips.edit_match, cog, FakeInteraction(), match=str(match_id), home_goals=0, away_goals=0)
+    row = db.query_one("SELECT * FROM trip_matches")
+    assert (row["home_goals"], row["away_goals"]) == (0, 0)
+
+
+def test_editing_a_crowd_to_zero_is_stored(cog, db):
+    match_id = _match_with_scorers(cog, db)
+    call(Trips.edit_match, cog, FakeInteraction(), match=str(match_id), attendance=0)
+    assert db.query_one("SELECT attendance FROM trip_matches")["attendance"] == 0
+
+
+def test_edit_match_can_correct_the_teams_and_the_ground(cog, db):
+    match_id = _match_with_scorers(cog, db)
+    call(
+        Trips.edit_match, cog, FakeInteraction(), match=str(match_id),
+        home="Borussia Dortmund", away="Bayern Munich", stadium="Westfalenstadion",
+        city="Dortmund", competition="DFB-Pokal", notes="cup night",
+    )
+    row = db.query_one("SELECT * FROM trip_matches")
+    assert row["home"] == "Borussia Dortmund"
+    assert row["away"] == "Bayern Munich"
+    assert row["stadium"] == "Westfalenstadion"
+    assert row["competition"] == "DFB-Pokal"
+    assert row["notes"] == "cup night"
+
+
+def test_edit_match_rejects_a_bad_date_without_writing(cog, db):
+    match_id = _match_with_scorers(cog, db)
+    response = call(
+        Trips.edit_match, cog, FakeInteraction(),
+        match=str(match_id), match_date="26/04/2014", home_goals=9,
+    )
+    assert "YYYY-MM-DD" in response.text()
+    row = db.query_one("SELECT * FROM trip_matches")
+    assert (row["match_date"], row["home_goals"]) == ("2014-04-26", 1), "nothing written"
+
+
+def test_edit_match_with_no_fields_says_so_and_writes_nothing(cog, db):
+    match_id = _match_with_scorers(cog, db)
+    response = call(Trips.edit_match, cog, FakeInteraction(), match=str(match_id))
+    assert "I need at least one" in response.text()
+    assert db.query_one("SELECT home_goals FROM trip_matches")["home_goals"] == 1
+
+
+def test_edit_match_on_an_unknown_match_says_so(cog, db):
+    response = call(Trips.edit_match, cog, FakeInteraction(), match="9999", home_goals=1)
+    assert "don't have that match" in response.text()
+
+
+def test_edit_match_reports_what_is_still_missing(cog, db):
+    call(Trips.add, cog, FakeInteraction(), year=2018, country="Scotland")
+    call(Trips.add_match, cog, FakeInteraction(), year=2018, home="Celtic", away="Rangers")
+    match_id = db.query_one("SELECT id FROM trip_matches")["id"]
+    response = call(
+        Trips.edit_match, cog, FakeInteraction(), match=str(match_id), home_goals=2, away_goals=1
+    )
+    text = response.text()
+    assert "Still missing" in text
+    assert "stadium" in text and "score" not in text

@@ -349,6 +349,103 @@ class Trips(commands.Cog):
         )
         await self._refresh_pinned()
 
+    @trips.command(name="edit-match", description="Correct a match without losing its scorers.")
+    @app_commands.describe(
+        match="Start typing a team or year",
+        home="Home team",
+        away="Away team",
+        home_goals="Home goals",
+        away_goals="Away goals",
+        match_date="Day of the match, YYYY-MM-DD",
+        competition="League, cup, friendly…",
+        city="City the match was in",
+        stadium="Ground",
+        attendance="Crowd",
+        notes="Anything else",
+    )
+    @app_commands.autocomplete(match=match_autocomplete)
+    async def edit_match(
+        self,
+        interaction: discord.Interaction,
+        match: str,
+        home: str | None = None,
+        away: str | None = None,
+        home_goals: app_commands.Range[int, 0, 30] | None = None,
+        away_goals: app_commands.Range[int, 0, 30] | None = None,
+        match_date: str | None = None,
+        competition: str | None = None,
+        city: str | None = None,
+        stadium: str | None = None,
+        attendance: app_commands.Range[int, 0, 200_000] | None = None,
+        notes: str | None = None,
+    ) -> None:
+        """Update the fields you supply on an existing match.
+
+        An UPDATE rather than a delete-and-re-add, which is the whole point:
+        `trip_goals` cascades off `trip_matches`, so removing a match to fix one
+        digit of the score would take its goalscorers with it.
+        """
+        row = self._resolve_match(match)
+        if row is None:
+            await interaction.response.send_message(
+                "I don't have that match. Pick one from the suggestions.", ephemeral=True
+            )
+            return
+
+        day, day_error = parse_day(match_date)
+        if day_error:
+            await interaction.response.send_message(day_error, ephemeral=True)
+            return
+
+        # `is not None` throughout, never truthiness: 0 is a real scoreline and
+        # an empty crowd figure is a real number, so neither may read as "the
+        # option wasn't supplied".
+        changes: dict[str, object] = {}
+        for column, value in (
+            ("home", (home or "").strip() or None),
+            ("away", (away or "").strip() or None),
+            ("competition", (competition or "").strip() or None),
+            ("city", (city or "").strip() or None),
+            ("stadium", (stadium or "").strip() or None),
+            ("notes", (notes or "").strip() or None),
+            ("match_date", day),
+        ):
+            if value is not None:
+                changes[column] = value
+        for column, number in (
+            ("home_goals", home_goals),
+            ("away_goals", away_goals),
+            ("attendance", attendance),
+        ):
+            if number is not None:
+                changes[column] = int(number)
+
+        if not changes:
+            await interaction.response.send_message(
+                "Tell me what to change — every field is optional, but I need at least one.",
+                ephemeral=True,
+            )
+            return
+
+        assignments = ", ".join(f"{column}=?" for column in changes)
+        self.db.execute(
+            f"UPDATE trip_matches SET {assignments} WHERE id=?",
+            (*changes.values(), row["id"]),
+        )
+        updated = self.db.query_one("SELECT * FROM trip_matches WHERE id=?", (row["id"],))
+        scorers = len(self._goals(row["id"]))
+        gaps = stats.missing_detail(
+            next(m for m in self.db.trip_match_rows() if m["id"] == row["id"])
+        )
+
+        tail = f"\nStill missing: {', '.join(gaps)}." if gaps else ""
+        kept = f" {scorers} scorer(s) kept." if scorers else ""
+        await interaction.response.send_message(
+            f"✏️ Updated {', '.join(sorted(changes))} — "
+            f"{self._fixture_text(updated)}.{kept}{tail}"
+        )
+        await self._refresh_pinned()
+
     @trips.command(name="add-goals", description="Record who scored in a match we saw.")
     @app_commands.describe(
         match="Start typing a team or year",

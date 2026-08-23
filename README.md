@@ -140,6 +140,7 @@ The away-trip archive: one place a year since 2010, and every match we saw while
 | `/trips search` | By team, country, city or ground |
 | `/trips random` | One trip at random |
 | `/trips missing` | What still needs filling in |
+| `/trips edit-match` | Correct a match — score, teams, competition, city, ground, crowd, date. Only the fields you supply change, and the scorers survive |
 | `/trips remove-match` | Delete one match, keeping the trip and its other matches |
 | `/trips remove` | Delete a whole trip and every match on it |
 
@@ -162,6 +163,16 @@ matches as you saw, so `/trips add-match year:2014` twice gives you both, and ea
 can carry its own `city` for a Ruhr-style trip taking in Dortmund one day and
 Gelsenkirchen the next. Leave `city` blank and the match inherits the trip's, so a London
 double-header needs no repetition.
+
+**Fixing a mistake.** Nothing needs deleting:
+
+| Wrong thing | What to run |
+|---|---|
+| Country, city, dates, notes | `/trips add` again for that year — it amends, and only the fields you supply change |
+| Score, teams, ground, crowd, competition, date | `/trips edit-match` — the scorers stay put |
+| Scorers | `/trips add-goals` with `replace:true` |
+
+Keep `/trips remove` for a trip that genuinely shouldn't be there: it deletes the trip, every match on it and every scorer. Moving a match to a different year isn't covered — for that, `/trips remove-match` and add it again.
 
 **Why this is typed in rather than fetched.** The football-data.org free tier has no
 match data before the 2023/24 season, covers only 12 competitions, and returns no venue,
