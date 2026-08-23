@@ -63,6 +63,7 @@ class Core(commands.Cog):
                 "`/trips add-match` — the match we saw\n"
                 "`/trips add-goals` — who scored\n"
                 "`/trips list` — every trip in order\n"
+                "`/trips matches` — every match as a table\n"
                 "`/trips show` — one trip in full\n"
                 "`/trips stats` — countries, goals, streaks\n"
                 "`/trips countries` · `/trips teams` — where and who\n"

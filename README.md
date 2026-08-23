@@ -133,6 +133,7 @@ The away-trip archive: one place a year since 2010, and every match we saw while
 | `/trips add-match` | A match we saw: `year:2014`, teams, score, competition, ground, crowd, and a `city` if that game was somewhere else |
 | `/trips add-goals` | Scorers for one match in a single field: `23 Robben A, 45 Mueller A` — minute, scorer, then H or A |
 | `/trips list` | Every trip in order, flagging the ones with more than one match |
+| `/trips matches` | Every match as a fixed-width table: year, home, away, result, ground |
 | `/trips show` | One year in full: every match, its ground and city, and who scored |
 | `/trips stats` | Countries, cities, grounds, goals, results, clubs, streaks — "how many countries have we seen" |
 | `/trips countries` | Each country with visit count and years |

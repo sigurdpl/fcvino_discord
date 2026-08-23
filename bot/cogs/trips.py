@@ -49,6 +49,18 @@ TOP_N = 8
 # and then every N hours, whereas `time=06:00` would never fire at all on a
 # laptop that is closed at six in the morning.
 LIST_REFRESH_HOURS = 24
+# One template for the header and every row of /trips matches, so the two cannot
+# drift out of alignment. The result column is 4 wide rather than 3 because a
+# ten-goal game ("10–3") would otherwise shove the ground one place right on that
+# row alone. The ground is last and unpadded — trailing spaces are invisible.
+MATCH_TEAM_WIDTH = 12
+MATCH_GROUND_WIDTH = 18
+MATCHES_ROW = "{year:<4}  {home:<12} {away:<12} {res:<4} {ground}"
+MATCHES_HEADER = MATCHES_ROW.format(
+    year="Year", home="Home", away="Away", res="Res", ground="Ground"
+)
+MAX_MATCH_ROWS = 60
+
 # Discord collapses runs of ordinary spaces in message text, so the hanging
 # indent under each year uses em spaces, which survive. Same trap that kept the
 # league table from lining up.
@@ -601,6 +613,38 @@ class Trips(commands.Cog):
             )
             return
         await interaction.response.send_message(embed=self._list_embed(view))
+
+    @trips.command(name="matches", description="Every match we've seen, as a table.")
+    async def matches(self, interaction: discord.Interaction) -> None:
+        rows = self.db.trip_match_rows()
+        if not rows:
+            await interaction.response.send_message(
+                "No matches recorded yet. `/trips add-match` once a trip exists.",
+                ephemeral=True,
+            )
+            return
+
+        shown = rows[:MAX_MATCH_ROWS]
+        lines = [MATCHES_HEADER]
+        for row in shown:
+            lines.append(
+                MATCHES_ROW.format(
+                    year=row["year"],
+                    home=truncate(row["home"], MATCH_TEAM_WIDTH),
+                    away=truncate(row["away"], MATCH_TEAM_WIDTH),
+                    res=fmt_score(row["home_goals"], row["away_goals"]),
+                    ground=truncate(row["stadium"] or "—", MATCH_GROUND_WIDTH),
+                )
+            )
+
+        e = embed("⚽ Every match", colour=FOOTBALL_COLOUR)
+        fill(e, ["```", *lines, "```"])
+        trips_count = len({row["trip_id"] for row in rows})
+        footer = f"{len(rows)} matches · {trips_count} trips"
+        if len(shown) < len(rows):
+            footer += f" · showing the first {len(shown)}"
+        e.set_footer(text=footer)
+        await interaction.response.send_message(embed=e)
 
     @trips.command(name="show", description="One trip in full.")
     @app_commands.describe(year="Which year's trip")

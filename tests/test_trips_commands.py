@@ -507,3 +507,103 @@ def test_edit_match_reports_what_is_still_missing(cog, db):
     text = response.text()
     assert "Still missing" in text
     assert "stadium" in text and "score" not in text
+
+
+# -- /trips matches, the flat table -----------------------------------------
+
+
+def table_rows(response):
+    """The table's lines, code fences stripped."""
+    e = response.messages[-1][1]["embed"]
+    assert len(e.fields) == 0, "content belongs in the description, not a named field"
+    return [line for line in e.description.split("\n") if line != "```"]
+
+
+def a_match(cog, year, home, away, hg=1, ag=0, stadium="Ground", country="Germany"):
+    if cog._trip_for_year(year) is None:
+        call(Trips.add, cog, FakeInteraction(), year=year, country=country)
+    call(
+        Trips.add_match, cog, FakeInteraction(),
+        year=year, home=home, away=away, home_goals=hg, away_goals=ag, stadium=stadium,
+    )
+
+
+def test_matches_says_so_when_nothing_is_recorded(cog, db):
+    response = call(Trips.matches, cog, FakeInteraction())
+    assert "No matches recorded yet" in response.text()
+
+
+def test_matches_header_names_the_columns_in_order(cog, db):
+    a_match(cog, 2014, "Dortmund", "Bayern")
+    assert table_rows(call(Trips.matches, cog, FakeInteraction()))[0] == (
+        "Year  Home         Away         Res  Ground"
+    )
+
+
+def test_a_match_row_renders_exactly_as_agreed(cog, db):
+    a_match(cog, 2014, "Dortmund", "Bayern", 0, 3, "Signal Iduna Park")
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    assert rows[1] == "2014  Dortmund     Bayern       0–3  Signal Iduna Park"
+
+
+def test_the_ground_column_starts_at_the_same_place_on_every_row(cog, db):
+    # The ground is last and unpadded, so rows differ in length by design —
+    # what has to hold is that the column starts where the header says.
+    a_match(cog, 2014, "Dortmund", "Bayern", 0, 3, "Signal Iduna Park")
+    a_match(
+        cog, 2015, "Wolverhampton Wanderers", "Real Madrid CF", 10, 3,
+        "Santiago Bernabeu Stadium",
+    )
+    a_match(cog, 2016, "Celtic", "Rangers", stadium=None)
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    column = rows[0].index("Ground")
+    for row in rows[1:]:
+        assert row[column - 1] == " ", f"column drifted: {row!r}"
+        assert row[column] != " ", f"ground missing at the column: {row!r}"
+
+
+def test_a_double_digit_scoreline_does_not_shift_the_ground(cog, db):
+    # The reason the result column is 4 wide rather than 3.
+    a_match(cog, 2014, "Dortmund", "Bayern", 0, 3, "Signal Iduna Park")
+    a_match(cog, 2015, "Arsenal", "Chelsea", 10, 3, "Emirates", country="England")
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    column = rows[0].index("Ground")
+    assert rows[1][column:].startswith("Signal")
+    assert rows[2][column:].startswith("Emirates")
+
+
+def test_an_unrecorded_score_shows_a_dash_and_stays_aligned(cog, db):
+    call(Trips.add, cog, FakeInteraction(), year=2018, country="Scotland")
+    call(Trips.add_match, cog, FakeInteraction(), year=2018, home="Celtic", away="Rangers")
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    column = rows[0].index("Ground")
+    assert "–" in rows[1][:column]
+    assert rows[1][column] == "—", "no ground recorded either"
+
+
+def test_long_names_are_truncated_rather_than_widening_the_row(cog, db):
+    a_match(
+        cog, 2019, "Wolverhampton Wanderers", "Real Madrid CF", 1, 0,
+        "Santiago Bernabeu Stadium",
+    )
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    column = rows[0].index("Ground")
+    assert "…" in rows[1]
+    assert rows[1][column - 1] == " "
+
+
+def test_matches_are_listed_chronologically_including_two_on_one_trip(cog, db):
+    a_match(cog, 2016, "Roma", "Lazio", 4, 3, "Olimpico", country="Italy")
+    a_match(cog, 2014, "Dortmund", "Bayern", 0, 3, "Signal Iduna Park")
+    a_match(cog, 2014, "Schalke", "Koeln", 1, 1, "Veltins-Arena")
+    rows = table_rows(call(Trips.matches, cog, FakeInteraction()))
+    years = [row[:4] for row in rows[1:]]
+    assert years == ["2014", "2014", "2016"]
+
+
+def test_the_footer_counts_matches_and_trips(cog, db):
+    a_match(cog, 2014, "Dortmund", "Bayern")
+    a_match(cog, 2014, "Schalke", "Koeln")
+    a_match(cog, 2016, "Roma", "Lazio", country="Italy")
+    e = call(Trips.matches, cog, FakeInteraction()).messages[-1][1]["embed"]
+    assert e.footer.text == "3 matches · 2 trips"
