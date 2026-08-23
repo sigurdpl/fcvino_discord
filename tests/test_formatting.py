@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import discord
+
 from bot.formatting import (
+    DESCRIPTION_LIMIT,
     chunk_lines,
+    fill,
     fmt_nok,
     fmt_score,
     kickoff_ts,
@@ -68,3 +72,41 @@ def test_chunk_lines_of_nothing_is_nothing():
 def test_a_single_overlong_line_is_still_emitted():
     blocks = chunk_lines(["z" * 1500], limit=1000)
     assert len(blocks) == 1
+
+
+# -- filling an embed body --------------------------------------------------
+
+
+def test_fill_uses_the_description_and_adds_no_fields():
+    # Every embed field renders its name on its own line, so a field named with
+    # a zero-width space shows up as a blank row. The description has no name.
+    e = fill(discord.Embed(title="t"), ["first", "second"])
+    assert e.description == "first\nsecond"
+    assert len(e.fields) == 0
+
+
+def test_fill_keeps_an_existing_description_and_separates_it():
+    e = fill(discord.Embed(title="t", description="intro"), ["a"])
+    assert e.description == "intro\n\na"
+
+
+def test_fill_of_nothing_leaves_an_empty_description():
+    e = fill(discord.Embed(title="t"), [])
+    assert not e.description
+    assert len(e.fields) == 0
+
+
+def test_fill_spills_into_fields_only_when_the_description_cannot_hold_it():
+    lines = ["x" * 500] * 20  # 10k characters, far past the 4096 budget
+    e = fill(discord.Embed(title="t"), lines)
+    assert e.description is None
+    assert len(e.fields) > 1, "a dropped list would be worse than a blank row"
+    assert sum(len(f.value) for f in e.fields) >= 10_000 - 100
+
+
+def test_fill_fits_a_realistic_archive_in_the_description():
+    # 40 trips at two lines each — the MAX_LIST_ROWS ceiling.
+    lines = ["**2014**  Germany, Dortmund", "  Dortmund 0–3 Bayern"] * 40
+    e = fill(discord.Embed(title="t"), lines)
+    assert e.description is not None and len(e.fields) == 0
+    assert len(e.description) < DESCRIPTION_LIMIT

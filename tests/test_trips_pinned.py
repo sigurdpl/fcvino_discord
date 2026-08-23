@@ -90,7 +90,9 @@ def embed_of(call_args):
 
 
 def text_of(e):
-    return "\n".join([e.title or "", *(f.value for f in e.fields), (e.footer.text or "")])
+    return "\n".join(
+        [e.title or "", e.description or "", *(f.value for f in e.fields), e.footer.text or ""]
+    )
 
 
 # -- the rendered view ------------------------------------------------------
@@ -148,6 +150,19 @@ def test_the_fingerprint_moves_when_a_trip_changes(cog, db):
     before = cog._list_view().fingerprint
     add_match(cog)
     assert cog._list_view().fingerprint != before
+
+
+def test_the_list_uses_no_fields_so_there_are_no_blank_rows(cog, db):
+    # A field named with a zero-width space renders as an empty line, which is
+    # what put a blank row between each year and its matches.
+    add_trip(cog)
+    add_match(cog)
+    e = call(Trips.list_trips, cog).messages[-1][1]["embed"]
+    assert len(e.fields) == 0
+    lines = e.description.split("\n")
+    assert lines[0].startswith("**2014**")
+    assert lines[1].strip().startswith("Dortmund"), "the fixture follows the year directly"
+    assert "" not in lines[:2]
 
 
 def test_the_command_and_the_pinned_copy_render_the_same_lines(cog, db):

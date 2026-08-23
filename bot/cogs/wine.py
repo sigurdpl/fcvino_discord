@@ -20,6 +20,7 @@ from ..formatting import (
     WINE_COLOUR,
     chunk_lines,
     embed,
+    fill,
     fmt_nok,
     medal,
     truncate,
@@ -383,9 +384,12 @@ class Wine(commands.Cog):
             if row["notes"]:
                 line += f"\n> {truncate(row['notes'], 200)}"
             lines.append(line)
-        e = embed("📓 Your tasting book", colour=WINE_COLOUR)
-        for i, block in enumerate(chunk_lines(lines)):
-            e.add_field(name="​" if i else f"{len(rows)} bottle(s)", value=block, inline=False)
+        e = embed(
+            "📓 Your tasting book",
+            colour=WINE_COLOUR,
+            description=f"**{len(rows)}** bottle(s)",
+        )
+        fill(e, lines)
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     @wine.command(name="remove", description="Delete a bottle you added by mistake.")

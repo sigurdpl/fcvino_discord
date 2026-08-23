@@ -70,6 +70,31 @@ def medal(position: int) -> str:
     return f"`{position}.`"
 
 
+DESCRIPTION_LIMIT = 4096
+
+
+def fill(e: discord.Embed, lines: list[str]) -> discord.Embed:
+    """Put `lines` into the embed's description.
+
+    Not into fields: Discord renders every field's *name* on its own line, so a
+    field named with a zero-width space shows up as a blank row above its
+    content. The description has no name, and its 4096-character budget is four
+    times a field's, so long lists stop needing to be split at all.
+
+    Anything already in the description is kept, with a blank line between.
+    Content too large even for the description falls back to fields, blank rows
+    and all — better a stray blank line than a dropped list.
+    """
+    body = "\n".join(lines)
+    existing = e.description or ""
+    if len(existing) + len(body) + 2 <= DESCRIPTION_LIMIT:
+        e.description = f"{existing}\n\n{body}" if existing else body
+        return e
+    for block in chunk_lines(lines):
+        e.add_field(name="\u200b", value=block, inline=False)
+    return e
+
+
 def chunk_lines(lines: list[str], limit: int = 1000) -> list[str]:
     """Group lines into blocks that fit an embed field, preserving order."""
     blocks: list[str] = []

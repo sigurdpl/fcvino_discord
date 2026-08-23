@@ -24,8 +24,8 @@ from ..db import parse_utc, sql_str_tuple, utcnow, utcnow_iso
 from ..football_api import DEAD_STATUSES, FINISHED_STATUSES, UNPLAYED_STATUSES, FootballAPIError
 from ..formatting import (
     TABLE_COLOUR,
-    chunk_lines,
     embed,
+    fill,
     fmt_score,
     kickoff_ts,
     local_day,
@@ -296,8 +296,7 @@ class Predictions(commands.Cog):
                 f"{POINTS_OUTCOME} pt result."
             ),
         )
-        for block in chunk_lines([line for line in lines if line]):
-            e.add_field(name="​", value=block, inline=False)
+        fill(e, [line for line in lines if line])
         await interaction.followup.send(embed=e, ephemeral=True)
 
     @predict.command(name="mine", description="Your picks, and what you still owe.")
@@ -507,8 +506,7 @@ class Predictions(commands.Cog):
                 f"Each fixture locks at its own kickoff — first one is {kickoff_ts(first)}."
             ),
         )
-        for block in chunk_lines([line for line in lines if line]):
-            e.add_field(name="​", value=block, inline=False)
+        fill(e, [line for line in lines if line])
         for channel in channels:
             try:
                 await channel.send(embed=e)
@@ -600,8 +598,7 @@ class Predictions(commands.Cog):
             colour=TABLE_COLOUR,
             description=description,
         )
-        for block in chunk_lines(lines):
-            e.add_field(name="​", value=block, inline=False)
+        fill(e, lines)
         return e
 
 

@@ -32,8 +32,8 @@ from ..formatting import (
     FOOTBALL_COLOUR,
     NEUTRAL_COLOUR,
     TABLE_COLOUR,
-    chunk_lines,
     embed,
+    fill,
     fmt_score,
     medal,
     truncate,
@@ -490,9 +490,7 @@ class Trips(commands.Cog):
 
     def _list_embed(self, view: ListView, *, changed_on: date | None = None) -> discord.Embed:
         e = embed(f"✈️ {view.count} trips", colour=FOOTBALL_COLOUR)
-        for block in chunk_lines(view.lines):
-            e.add_field(name="​", value=block, inline=False)
-        e.add_field(name="​", value=view.summary, inline=False)
+        fill(e, [*view.lines, "", view.summary])
         if changed_on is not None:
             e.set_footer(text=f"Last changed {changed_on.strftime('%-d %B %Y')}")
         return e
@@ -720,8 +718,7 @@ class Trips(commands.Cog):
             colour=NEUTRAL_COLOUR,
             description="Add detail with `/trips add-match` or `/trips add-goals`.",
         )
-        for block in chunk_lines(lines):
-            e.add_field(name="​", value=block, inline=False)
+        fill(e, lines)
         await interaction.response.send_message(embed=e, ephemeral=True)
 
     # -- rendering ---------------------------------------------------------

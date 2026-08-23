@@ -25,8 +25,8 @@ from ..football_api import (
 )
 from ..formatting import (
     FOOTBALL_COLOUR,
-    chunk_lines,
     embed,
+    fill,
     fmt_score,
     kickoff_relative,
     kickoff_ts,
@@ -195,9 +195,7 @@ class Football(commands.Cog):
             await interaction.followup.send(empty, ephemeral=True)
             return
         e = embed(title, colour=FOOTBALL_COLOUR)
-        blocks = chunk_lines(self._fixture_lines(rows, with_score=with_score))
-        for i, block in enumerate(blocks):
-            e.add_field(name="​" if i else "​", value=block, inline=False)
+        fill(e, self._fixture_lines(rows, with_score=with_score))
         await interaction.followup.send(embed=e)
 
     # -- commands ----------------------------------------------------------
