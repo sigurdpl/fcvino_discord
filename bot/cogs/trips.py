@@ -15,15 +15,18 @@ and tested on its own.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import sqlite3
 from datetime import date
+from typing import NamedTuple
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
+from .. import pinned
 from .. import trip_stats as stats
 from ..formatting import (
     FOOTBALL_COLOUR,
@@ -41,6 +44,32 @@ log = logging.getLogger(__name__)
 FIRST_TRIP_YEAR = 2010
 MAX_LIST_ROWS = 40
 TOP_N = 8
+# The pinned copy is refreshed on every change, so this is only a safety net.
+# An interval rather than a fixed clock time: tasks.loop fires once on startup
+# and then every N hours, whereas `time=06:00` would never fire at all on a
+# laptop that is closed at six in the morning.
+LIST_REFRESH_HOURS = 24
+# Discord collapses runs of ordinary spaces in message text, so the hanging
+# indent under each year uses em spaces, which survive. Same trap that kept the
+# league table from lining up.
+LIST_INDENT = "\u2003\u2003"
+
+
+class ListView(NamedTuple):
+    """The archive rendered once, for both `/trips list` and the pinned copy."""
+
+    count: int
+    lines: list[str]
+    summary: str
+
+    @property
+    def fingerprint(self) -> str:
+        """Identifies the content, deliberately excluding the footer date.
+
+        If the date were in here, the daily pass would find a new fingerprint
+        every day and re-edit a message whose content had not moved.
+        """
+        return hashlib.sha256("\n".join([*self.lines, self.summary]).encode()).hexdigest()
 
 
 def parse_day(value: str | None) -> tuple[str | None, str | None]:
@@ -62,6 +91,61 @@ class Trips(commands.Cog):
     @property
     def db(self):
         return self.bot.db  # type: ignore[attr-defined]
+
+    async def cog_load(self) -> None:
+        self.list_loop.start()
+
+    async def cog_unload(self) -> None:
+        self.list_loop.cancel()
+
+    # -- the pinned copy ---------------------------------------------------
+
+    @tasks.loop(hours=LIST_REFRESH_HOURS)
+    async def list_loop(self) -> None:
+        """Safety net. Every change refreshes the pinned copy directly, so this
+        mostly finds nothing to do — which costs one hash comparison."""
+        await self._refresh_pinned()
+
+    @list_loop.before_loop
+    async def before_list_loop(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def _refresh_pinned(self) -> None:
+        """Bring the pinned archive up to date.
+
+        Called after every change as well as daily. Swallows its own failures:
+        a channel the bot cannot post in must not make `/trips add` look broken
+        when the trip itself was saved perfectly well.
+        """
+        view = self._list_view()
+        if view is None:
+            # Nothing recorded. Don't start a pinned message for an empty
+            # archive, but do correct one that already exists rather than
+            # leaving it showing trips that have since been deleted.
+            embed_to_show = embed(
+                "✈️ No trips recorded",
+                colour=FOOTBALL_COLOUR,
+                description="`/trips add` to start the archive again.",
+            )
+            fingerprint = "empty"
+            if not any(
+                self.db.get_bot_message(guild_id, "trips")
+                for guild_id, _ in self.db.configured_guilds("trips")
+            ):
+                return
+        else:
+            embed_to_show = self._list_embed(view, changed_on=date.today())
+            fingerprint = view.fingerprint
+        try:
+            await pinned.publish(
+                self.bot,
+                "trips",
+                embed=embed_to_show,
+                fingerprint=fingerprint,
+                pin_reason="FC Vino trips archive",
+            )
+        except Exception:  # noqa: BLE001 - never break the calling command
+            log.exception("could not refresh the pinned trips list")
 
     # -- lookups -----------------------------------------------------------
 
@@ -191,6 +275,7 @@ class Trips(commands.Cog):
         e = self._trip_embed(trip)
         e.set_footer(text=f"Trip #{trip_id} · add the match with /trips add-match")
         await interaction.response.send_message(f"✈️ {verb} the {trip['year']} trip.", embed=e)
+        await self._refresh_pinned()
 
     @trips.command(name="add-match", description="Add a match we saw on a trip.")
     @app_commands.describe(
@@ -262,6 +347,7 @@ class Trips(commands.Cog):
             f"⚽ Added to the **{row['year']}** trip to {row['country']}{ordinal}: "
             f"{self._fixture_text(match)}{tail}"
         )
+        await self._refresh_pinned()
 
     @trips.command(name="add-goals", description="Record who scored in a match we saw.")
     @app_commands.describe(
@@ -303,6 +389,7 @@ class Trips(commands.Cog):
                 f"{stats.GOALS_HELP}"
             )
         await interaction.response.send_message(message)
+        await self._refresh_pinned()
 
     @trips.command(name="remove", description="Delete a trip and every match on it.")
     @app_commands.describe(year="Which year's trip")
@@ -330,6 +417,7 @@ class Trips(commands.Cog):
         await interaction.response.send_message(
             f"🗑️ Removed the {row['year']} trip to {row['country']}{matches} its goals."
         )
+        await self._refresh_pinned()
 
     @trips.command(name="remove-match", description="Delete one match, keeping the trip.")
     @app_commands.describe(match="Start typing a team or year")
@@ -356,6 +444,7 @@ class Trips(commands.Cog):
         await interaction.response.send_message(
             f"🗑️ Removed {self._fixture_text(row)}.{tail}"
         )
+        await self._refresh_pinned()
 
     def _may_delete(self, interaction: discord.Interaction, added_by: int) -> bool:
         """Your own entries, or anything if you can manage the server."""
@@ -368,25 +457,55 @@ class Trips(commands.Cog):
 
     # -- reading -----------------------------------------------------------
 
-    @trips.command(name="list", description="Every trip, in order.")
-    async def list_trips(self, interaction: discord.Interaction) -> None:
+    # -- the archive as one view, shared by the command and the pinned copy --
+
+    def _list_view(self) -> ListView | None:
+        """The whole archive rendered, or None while nothing is recorded."""
         trips = self._all_trips()
         if not trips:
+            return None
+
+        lines: list[str] = []
+        for trip in trips[:MAX_LIST_ROWS]:
+            matches = self._trip_matches(trip["id"])
+            where = trip["country"] + (f", {trip['city']}" if trip["city"] else "")
+            lines.append(f"**{trip['year']}**{LIST_INDENT}{where}")
+            if not matches:
+                lines.append(f"{LIST_INDENT}_no match recorded_")
+                continue
+            fixtures = " · ".join(self._fixture_text(m) for m in matches)
+            count = f" _({len(matches)} matches)_" if len(matches) > 1 else ""
+            lines.append(f"{LIST_INDENT}{fixtures}{count}")
+
+        all_matches = self.db.trip_match_rows()
+        bits = [
+            f"**{len(stats.country_counts(trips))}** countries",
+            f"**{len(all_matches)}** matches",
+            f"**{stats.total_goals(all_matches)}** goals",
+        ]
+        grounds = stats.distinct_stadiums(all_matches)
+        if grounds:
+            bits.append(f"**{len(grounds)}** grounds")
+        return ListView(count=len(trips), lines=lines, summary=" · ".join(bits))
+
+    def _list_embed(self, view: ListView, *, changed_on: date | None = None) -> discord.Embed:
+        e = embed(f"✈️ {view.count} trips", colour=FOOTBALL_COLOUR)
+        for block in chunk_lines(view.lines):
+            e.add_field(name="​", value=block, inline=False)
+        e.add_field(name="​", value=view.summary, inline=False)
+        if changed_on is not None:
+            e.set_footer(text=f"Last changed {changed_on.strftime('%-d %B %Y')}")
+        return e
+
+    @trips.command(name="list", description="Every trip, in order.")
+    async def list_trips(self, interaction: discord.Interaction) -> None:
+        view = self._list_view()
+        if view is None:
             await interaction.response.send_message(
                 "Nothing recorded yet. `/trips add` to start with 2010.", ephemeral=True
             )
             return
-        lines = []
-        for trip in trips[:MAX_LIST_ROWS]:
-            matches = self._trip_matches(trip["id"])
-            where = trip["country"] + (f", {trip['city']}" if trip["city"] else "")
-            fixtures = " · ".join(self._fixture_text(m) for m in matches) or "_no match recorded_"
-            count = f" _({len(matches)} matches)_" if len(matches) > 1 else ""
-            lines.append(f"**{trip['year']}** {where} — {fixtures}{count}")
-        e = embed(f"✈️ {len(trips)} trips", colour=FOOTBALL_COLOUR)
-        for block in chunk_lines(lines):
-            e.add_field(name="​", value=block, inline=False)
-        await interaction.response.send_message(embed=e)
+        await interaction.response.send_message(embed=self._list_embed(view))
 
     @trips.command(name="show", description="One trip in full.")
     @app_commands.describe(year="Which year's trip")

@@ -15,6 +15,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from .. import pinned
 from ..config import FREE_COMPETITIONS
 from ..db import parse_utc, sql_str_tuple, utcnow
 from ..football_api import (
@@ -67,6 +68,7 @@ def _signed(value: object) -> str:
     if not isinstance(value, int):
         return "-"
     return f"{value:+d}" if value else "0"
+
 
 COMPETITION_CHOICES = [
     app_commands.Choice(name=name, value=code) for code, name in FREE_COMPETITIONS.items()
@@ -451,67 +453,14 @@ class Football(commands.Cog):
         if e is None:
             log.info("no %s table published yet", code)
             return
-        fingerprint = self._standings_hash(data)
 
-        for guild_id, channel_id in targets:
-            guild = self.bot.get_guild(guild_id)
-            channel = guild.get_channel(channel_id) if guild else None
-            if not isinstance(channel, discord.TextChannel):
-                continue
-            await self._publish_standings(guild_id, channel, e, fingerprint)
-
-    async def _publish_standings(
-        self,
-        guild_id: int,
-        channel: discord.TextChannel,
-        e: discord.Embed,
-        fingerprint: str,
-    ) -> None:
-        existing = self.db.get_bot_message(guild_id, "standings")
-        if (
-            existing
-            and existing["content_hash"] == fingerprint
-            and existing["channel_id"] == channel.id
-        ):
-            return
-
-        if existing and existing["channel_id"] == channel.id:
-            try:
-                message = await channel.fetch_message(existing["message_id"])
-                await message.edit(embed=e)
-                self.db.set_bot_message(
-                    guild_id,
-                    "standings",
-                    channel_id=channel.id,
-                    message_id=message.id,
-                    content_hash=fingerprint,
-                )
-                return
-            except discord.NotFound:
-                # Someone deleted it; fall through and post a fresh one.
-                log.info("standings message %s is gone, reposting", existing["message_id"])
-                self.db.clear_bot_message(guild_id, "standings")
-            except discord.HTTPException:
-                log.exception("could not edit the standings message")
-                return
-
-        try:
-            message = await channel.send(embed=e)
-        except discord.HTTPException:
-            log.exception("could not post the standings message")
-            return
-        self.db.set_bot_message(
-            guild_id,
+        await pinned.publish(
+            self.bot,
             "standings",
-            channel_id=channel.id,
-            message_id=message.id,
-            content_hash=fingerprint,
+            embed=e,
+            fingerprint=self._standings_hash(data),
+            pin_reason="FC Vino league table",
         )
-        try:
-            await message.pin(reason="FC Vino league table")
-        except discord.HTTPException:
-            # Pinning needs Manage Messages; the table works fine unpinned.
-            log.info("could not pin the standings message in #%s", channel.name)
 
     @standings_loop.before_loop
     async def before_standings_loop(self) -> None:

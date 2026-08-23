@@ -143,6 +143,19 @@ The away-trip archive: one place a year since 2010, and every match we saw while
 | `/trips remove-match` | Delete one match, keeping the trip and its other matches |
 | `/trips remove` | Delete a whole trip and every match on it |
 
+**A pinned channel showing the whole archive.** Same idea as the league table — a channel
+can't run a slash command, so the bot maintains one message:
+
+```
+/fcvino-setup kind:trips channel:#trips
+```
+
+It posts the archive, pins it, and edits that message whenever anything changes: adding a
+trip, a match or a result updates it within a second, and a daily pass catches anything
+missed. It only edits when the text actually differs, so recording a scorer — which the
+list doesn't display — leaves it alone. Delete every trip and the message corrects itself
+rather than showing a list that no longer exists. Pinning needs **Manage Messages**.
+
 **One place a year, sometimes more than one match.** The year identifies a trip — that's
 why the commands take `year:2014` rather than a name to disambiguate. A trip holds as many
 matches as you saw, so `/trips add-match year:2014` twice gives you both, and each match
@@ -213,6 +226,7 @@ bot/db.py             SQLite schema and helpers; the idempotency guards live her
 bot/football_api.py   the only thing that talks to football-data.org: rate limit + cache
 bot/mirror.py         keeps the local `matches` table in step with the API
 bot/trip_stats.py     pure statistics over the trips archive
+bot/pinned.py         messages the bot keeps up to date in place
 bot/formatting.py     embeds, colours, kroner, Discord timestamps
 bot/cogs/core.py      /ping, /fcvino-help, /fcvino-setup
 bot/cogs/wine.py      the cellar

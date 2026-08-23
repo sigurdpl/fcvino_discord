@@ -18,6 +18,7 @@ CHANNEL_PURPOSE = {
     "wine": "wine announcements",
     "predictions": "matchweek fixtures, results and the leaderboard",
     "standings": "the league table, kept up to date in one message",
+    "trips": "the trips archive, kept up to date in one message",
 }
 
 
@@ -129,6 +130,7 @@ class Core(commands.Cog):
             app_commands.Choice(name="wine — wine announcements", value="wine"),
             app_commands.Choice(name="predictions — fixtures & leaderboard", value="predictions"),
             app_commands.Choice(name="standings — a live league table", value="standings"),
+            app_commands.Choice(name="trips — the away-trip archive", value="trips"),
         ]
     )
     @app_commands.default_permissions(manage_guild=True)

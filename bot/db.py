@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS bot_messages (
 );
 """
 
-CHANNEL_KINDS = ("football", "wine", "predictions", "standings")
+CHANNEL_KINDS = ("football", "wine", "predictions", "standings", "trips")
 
 
 def utcnow() -> datetime:
