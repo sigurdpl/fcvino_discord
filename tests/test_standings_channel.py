@@ -23,7 +23,7 @@ from bot.db import Database
 GUILD_ID, CHANNEL_ID = 900, 901
 
 
-def standings_payload(*, leader="Arsenal", points=12, played=5):
+def standings_payload(*, leader="Arsenal", points=12, played=5, goals_for=11, goals_against=4):
     return {
         "standings": [
             {
@@ -34,13 +34,17 @@ def standings_payload(*, leader="Arsenal", points=12, played=5):
                         "position": 1,
                         "team": {"shortName": leader, "name": f"{leader} FC"},
                         "playedGames": played,
-                        "goalDifference": 7,
+                        "goalsFor": goals_for,
+                        "goalsAgainst": goals_against,
+                        "goalDifference": goals_for - goals_against,
                         "points": points,
                     },
                     {
                         "position": 2,
                         "team": {"shortName": "Chelsea", "name": "Chelsea FC"},
                         "playedGames": played,
+                        "goalsFor": 8,
+                        "goalsAgainst": 5,
                         "goalDifference": 3,
                         "points": 10,
                     },
@@ -49,6 +53,13 @@ def standings_payload(*, leader="Arsenal", points=12, played=5):
             {"type": "HOME", "table": [{"position": 1, "team": {"shortName": "Ignored"}}]},
         ]
     }
+
+
+def table_lines(e):
+    """The rows inside the code block, fences stripped."""
+    body = e.fields[0].value
+    assert body.startswith("```\n") and body.endswith("\n```"), body[:20]
+    return body[4:-4].split("\n")
 
 
 class StubAPI:
@@ -128,6 +139,103 @@ def test_the_fingerprint_tracks_points_and_position(db, channel):
     assert base != instance._standings_hash(standings_payload(points=13))
     assert base != instance._standings_hash(standings_payload(leader="Liverpool"))
     assert base != instance._standings_hash(standings_payload(played=6))
+
+
+def test_the_fingerprint_notices_goals_when_points_and_gd_are_unchanged(db, channel):
+    # Drawing 1-1 and drawing 2-2 give the same points and the same goal
+    # difference. The table shows F and A, so the fingerprint has to see them or
+    # the pinned message would keep showing stale goals.
+    instance = cog(db, StubAPI({}), channel)
+    one_one = standings_payload(goals_for=11, goals_against=4)
+    two_two = standings_payload(goals_for=12, goals_against=5)
+    assert one_one["standings"][0]["table"][0]["goalDifference"] == (
+        two_two["standings"][0]["table"][0]["goalDifference"]
+    ), "the premise: identical goal difference"
+    assert instance._standings_hash(one_one) != instance._standings_hash(two_two)
+
+
+# -- fixed-width layout -----------------------------------------------------
+
+
+def test_every_row_is_the_same_width_as_the_header(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    e = instance._standings_embed(standings_payload(), "Premier League")
+    lines = table_lines(e)
+    assert len({len(line) for line in lines}) == 1, [(len(x), x) for x in lines]
+
+
+def test_the_table_is_wrapped_in_a_code_block(db, channel):
+    # Discord uses a proportional font and collapses runs of spaces in ordinary
+    # text, so padding only survives inside a code block.
+    instance = cog(db, StubAPI({}), channel)
+    body = instance._standings_embed(standings_payload(), "Premier League").fields[0].value
+    assert body.startswith("```")
+    assert "`" not in body[4:-4], "no stray inline backticks inside the block"
+
+
+def test_the_header_names_the_columns_in_order(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    lines = table_lines(instance._standings_embed(standings_payload(), "Premier League"))
+    assert lines[0] == " #  Team            P   F   A  GD Pts"
+
+
+def test_a_row_renders_exactly_as_agreed(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    lines = table_lines(instance._standings_embed(standings_payload(), "Premier League"))
+    assert lines[1] == " 1  Arsenal         5  11   4  +7  12"
+
+
+def test_goals_for_and_against_appear_before_the_points(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    row = table_lines(instance._standings_embed(standings_payload(), "Premier League"))[1]
+    assert row.index("11") < row.index("+7") < row.rindex("12")
+
+
+@pytest.mark.parametrize(
+    "position,played,goals_for,goals_against,points",
+    [
+        (1, 0, 0, 0, 0),           # a fresh season
+        (20, 38, 100, 99, 114),    # every column at full width
+        (9, 38, 9, 108, 3),        # a heavy goal difference the other way
+    ],
+)
+def test_awkward_values_do_not_disturb_the_width(
+    db, channel, position, played, goals_for, goals_against, points
+):
+    instance = cog(db, StubAPI({}), channel)
+    payload = standings_payload(played=played, goals_for=goals_for,
+                                goals_against=goals_against, points=points)
+    payload["standings"][0]["table"][0]["position"] = position
+    lines = table_lines(instance._standings_embed(payload, "Premier League"))
+    assert len({len(line) for line in lines}) == 1, [(len(x), x) for x in lines]
+
+
+def test_a_long_club_name_is_truncated_rather_than_widening_the_row(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    payload = standings_payload()
+    payload["standings"][0]["table"][0]["team"] = {
+        "shortName": "Wolverhampton Wanderers",
+        "name": "Wolverhampton Wanderers FC",
+    }
+    lines = table_lines(instance._standings_embed(payload, "Premier League"))
+    assert len({len(line) for line in lines}) == 1
+    assert "Wolverhampton" in lines[1]
+
+
+def test_a_missing_number_shows_as_missing_rather_than_zero(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    payload = standings_payload()
+    del payload["standings"][0]["table"][0]["goalsFor"]
+    lines = table_lines(instance._standings_embed(payload, "Premier League"))
+    assert "-" in lines[1]
+    assert len({len(line) for line in lines}) == 1
+
+
+def test_a_goal_difference_of_zero_is_plain(db, channel):
+    instance = cog(db, StubAPI({}), channel)
+    payload = standings_payload(goals_for=4, goals_against=4)
+    row = table_lines(instance._standings_embed(payload, "Premier League"))[1]
+    assert "+0" not in row and " 0 " in row
 
 
 # -- the loop ---------------------------------------------------------------

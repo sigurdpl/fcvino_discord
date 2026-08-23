@@ -44,6 +44,30 @@ TEAM_REFRESH_EVERY = 4
 MAX_FIXTURE_LINES = 25
 MAX_TABLE_ROWS = 20
 
+# The header and every row go through this one template, so they cannot drift
+# out of alignment. Widths hold for a full season: 38 games, three-figure goal
+# tallies and points, and a two-digit position for a 36-team league phase.
+TEAM_COLUMN_WIDTH = 14
+STANDINGS_ROW = "{pos:>2}  {team:<14} {played:>2} {gf:>3} {ga:>3} {gd:>3} {pts:>3}"
+STANDINGS_HEADER = STANDINGS_ROW.format(
+    pos="#", team="Team", played="P", gf="F", ga="A", gd="GD", pts="Pts"
+)
+
+
+def _cell(value: object) -> str:
+    """A value for the table, or `-` when the API didn't send one.
+
+    A missing number is shown as missing rather than as a fabricated 0.
+    """
+    return "-" if value is None else str(value)
+
+
+def _signed(value: object) -> str:
+    """Goal difference, signed — but plain `0` rather than `+0`."""
+    if not isinstance(value, int):
+        return "-"
+    return f"{value:+d}" if value else "0"
+
 COMPETITION_CHOICES = [
     app_commands.Choice(name=name, value=code) for code, name in FREE_COMPETITIONS.items()
 ]
@@ -339,25 +363,40 @@ class Football(commands.Cog):
         """The overall tables in an API standings payload, groups included."""
         return [s for s in data.get("standings", []) if s.get("type") == "TOTAL"]
 
+    def _standings_line(self, row: dict) -> str:
+        """One table row, padded to the same width as every other."""
+        return STANDINGS_ROW.format(
+            pos=_cell(row.get("position")),
+            team=truncate(self._team_name(row), TEAM_COLUMN_WIDTH),
+            played=_cell(row.get("playedGames")),
+            gf=_cell(row.get("goalsFor")),
+            ga=_cell(row.get("goalsAgainst")),
+            gd=_signed(row.get("goalDifference")),
+            pts=_cell(row.get("points")),
+        )
+
     def _standings_embed(self, data: dict, name: str) -> discord.Embed | None:
-        """Render a standings payload, or None if no table is published yet."""
+        """Render a standings payload, or None if no table is published yet.
+
+        The whole table goes in one code block. Discord renders ordinary message
+        text in a proportional font and collapses runs of spaces, so column
+        padding only survives inside a code block — the previous version padded
+        the club names in plain text, which is why the rows never lined up.
+        """
         totals = self._standings_tables(data)
         if not totals:
             return None
         e = embed(f"🏟️ {name}", colour=FOOTBALL_COLOUR)
         for standing in totals[:4]:
             table = standing.get("table", [])[:MAX_TABLE_ROWS]
-            lines = [
-                f"`{row['position']:>2}` {truncate(self._team_name(row), 22):<22}"
-                f" `{row['playedGames']:>2}` `{row['goalDifference']:>+3}` **{row['points']:>2}**"
-                for row in table
-            ]
+            lines = [self._standings_line(row) for row in table]
             if not lines:
                 continue
             header = standing.get("group") or "Table"
+            body = "\n".join([STANDINGS_HEADER, *lines])
             e.add_field(
                 name=header.replace("_", " ").title(),
-                value="`Pos Team                    P  GD Pts`\n" + "\n".join(lines),
+                value=f"```\n{body}\n```",
                 inline=False,
             )
         if not e.fields:
@@ -371,6 +410,11 @@ class Football(commands.Cog):
         The loop compares this before editing, so a table that hasn't moved
         since the last check is left alone rather than re-edited every half
         hour — no "(edited)" marks on a quiet Tuesday.
+
+        It has to cover every column the table shows. Goals for and against are
+        in here because two teams drawing 1-1 and drawing 2-2 come out with the
+        same points and the same goal difference: fingerprint only those and the
+        goals columns would sit there stale.
         """
         parts: list[str] = []
         for standing in self._standings_tables(data):
@@ -378,6 +422,7 @@ class Football(commands.Cog):
             for row in standing.get("table", [])[:MAX_TABLE_ROWS]:
                 parts.append(
                     f"{row.get('position')}|{self._team_name(row)}|{row.get('playedGames')}"
+                    f"|{row.get('goalsFor')}|{row.get('goalsAgainst')}"
                     f"|{row.get('goalDifference')}|{row.get('points')}"
                 )
         return hashlib.sha256("\n".join(parts).encode()).hexdigest()
