@@ -122,6 +122,186 @@
       "region": "Swartland",
       "note": "grape left out on purpose: sources describe the Baby Bandito range as Chenin but do not confirm this bottling",
       "source": "https://www.littlewine.io/winemaker-magazine/testalonga"
+    },
+    {
+      "name": "Ch. Panet 2015",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Saint-Émilion Grand Cru; 80% Merlot, 20% Cabernet Franc",
+      "source": "https://www.vignobles-carles.fr/en/portfolio_page/chateau-panet-en/"
+    },
+    {
+      "name": "Ch. Panet 2019",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Saint-Émilion Grand Cru; 80% Merlot, 20% Cabernet Franc",
+      "source": "https://www.vignobles-carles.fr/en/portfolio_page/chateau-panet-en/"
+    },
+    {
+      "name": "Bonus: Ch. Panet 2018",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Saint-Émilion Grand Cru; 80% Merlot, 20% Cabernet Franc",
+      "source": "https://www.vignobles-carles.fr/en/portfolio_page/chateau-panet-en/"
+    },
+    {
+      "name": "Ch. Laroque 2008",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Grand Cru Classé, Merlot-dominant",
+      "source": "https://en.wikipedia.org/wiki/Ch%C3%A2teau_Laroque"
+    },
+    {
+      "name": "Ch. Laroque 2015",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Grand Cru Classé, Merlot-dominant",
+      "source": "https://en.wikipedia.org/wiki/Ch%C3%A2teau_Laroque"
+    },
+    {
+      "name": "Ch. Simard 2000",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "65% Merlot, 35% Cabernet Franc",
+      "source": "https://www.thewinecellarinsider.com/bordeaux-wine-producer-profiles/bordeaux/st-emilion/chateau-haut-simard-st-emilion-bordeaux-wine/"
+    },
+    {
+      "name": "Ch. Beaumont 2018",
+      "country": "France",
+      "region": "Haut-Médoc",
+      "grape": "Bordeaux blend",
+      "note": "Cru Bourgeois; roughly half Cabernet Sauvignon, half Merlot",
+      "source": "https://www.decanter.com/wine-reviews/france/bordeaux/chateau-beaumont-haut-medoc-cru-bourgeois-superieur-2018-44694/"
+    },
+    {
+      "name": "Matassa Olla Rouge",
+      "country": "France",
+      "region": "Roussillon",
+      "grape": "Grenache",
+      "note": "70% Grenache Noir, 10% Grenache Gris, 20% Macabeu",
+      "source": "https://primalwine.com/products/domaine-matassa-olla-rouge-natural-wine"
+    },
+    {
+      "name": "Clos du Tue-Boeuf Vin Rouge",
+      "country": "France",
+      "region": "Touraine",
+      "note": "grape left out: the domaine bottles Gamay, Pinot Noir and Côt, and this cuvée's blend isn't stated",
+      "source": "http://www.puzelat.com/the-estate/organic-and-natural-wines/"
+    },
+    {
+      "name": "Meinklang Mulatschak Roter",
+      "country": "Austria",
+      "region": "Burgenland",
+      "grape": "Zweigelt",
+      "note": "Roter Mulatschak is Zweigelt with St. Laurent",
+      "source": "https://www.vintageroots.co.uk/meinklang-roter-mulatschak-75cl/"
+    },
+    {
+      "name": "Claus Preisinger Puszta Libre",
+      "country": "Austria",
+      "region": "Burgenland",
+      "grape": "Zweigelt",
+      "note": "60% Zweigelt, 20% St. Laurent, 20% Pinot Noir",
+      "source": "https://morenaturalwine.com/products/puszta-libre-claus-preisinger"
+    },
+    {
+      "name": "Mother Rock Brutal!",
+      "country": "South Africa",
+      "region": "Swartland",
+      "note": "grape left out: the Brutal! label is bottled as both Cinsault and skin-contact Chenin Blanc, and this entry doesn't say which",
+      "source": "https://vsimports.com/south-africa/mother-rock/"
+    },
+    {
+      "name": "Patrick Sullivan Jumpin Juice - Half Full Red",
+      "country": "Australia",
+      "region": "Gippsland",
+      "note": "grape left out: the blend is stated to change every vintage, and no vintage is recorded here",
+      "source": "https://wineexperience.com.au/wine/patrick-sullivan-jumpin-juice-half-full-red-gippsland"
+    },
+    {
+      "name": "No Control Sortir de l'Enfer",
+      "country": "France",
+      "region": "Auvergne",
+      "grape": "Gamay",
+      "note": "100% Gamay d'Auvergne",
+      "source": "https://crocodilewine.square.site/product/no-control-sortir-de-l-enfer-gamay/1489"
+    },
+    {
+      "name": "Aroa Le Naturel Tinto 2020",
+      "country": "Spain",
+      "region": "Navarra",
+      "grape": "Grenache",
+      "note": "Garnacha-led field blend",
+      "source": "https://www.decanter.com/wine-reviews/spain/navarra/aroa-le-naturel-tinto-navarra-spain-2022-79582"
+    },
+    {
+      "name": "Enamore 2011",
+      "country": "Argentina",
+      "region": "Mendoza",
+      "grape": "Malbec",
+      "note": "Renacer with Allegrini, appassimento; 62% Malbec",
+      "source": "https://www.wine.com/product/bodegas-renacer-enamore-2007/102414"
+    },
+    {
+      "name": "Bussaco 2004",
+      "country": "Portugal",
+      "region": "Bairrada & Dão",
+      "note": "Buçaco Palace Hotel; the red is Baga and Touriga Nacional, but this entry doesn't say red or white",
+      "source": "https://www.wineanorak.com/wineblog/portugal/tasting-the-wines-of-the-bucaco-palace-hotel-one-of-portugals-treasures"
+    },
+    {
+      "name": "Lopez de Heredida Bosconina 2007",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "López de Heredia Viña Bosconia; 80% Tempranillo, 15% Garnacha. Name misspelt twice in the sheet",
+      "source": "https://www.wine.com/product/r-lopez-de-heredia-vina-bosconia-reserva-2010/878305"
+    },
+    {
+      "name": "Produttori dei Colli Boca 2018",
+      "country": "Italy",
+      "region": "Boca",
+      "grape": "Nebbiolo",
+      "note": "Boca DOC, Alto Piemonte: 70-90% Nebbiolo with Vespolina and Uva Rara",
+      "source": "https://consnebbiolialtop.it/boca-doc.html"
+    },
+    {
+      "name": "Ch. Lanessan 1998",
+      "country": "France",
+      "region": "Haut-Médoc",
+      "grape": "Bordeaux blend",
+      "note": "52% Cabernet Sauvignon, 37% Merlot, Petit Verdot and Cabernet Franc",
+      "source": "https://www.lanessan.com/en/our-wines/chateau-lanessan/"
+    },
+    {
+      "name": "Ch. Phélan-Ségur 2014",
+      "country": "France",
+      "region": "Saint-Estèphe",
+      "grape": "Bordeaux blend",
+      "note": "Cabernet Sauvignon-dominant with Merlot",
+      "source": "https://www.phelansegur.com/en/en-terre-de-st-estephe/"
+    },
+    {
+      "name": "Ch. Montus 2015 Morten",
+      "country": "France",
+      "region": "Madiran",
+      "grape": "Tannat",
+      "note": "Alain Brumont; Madiran built on Tannat",
+      "source": "https://www.brumont.fr/en/presentation"
+    },
+    {
+      "name": "Castillo Ygay Gran Reserva Especial 2007",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "Marqués de Murrieta; Tempranillo with about 15% Mazuelo",
+      "source": "https://mmdusa.net/portfolio/marques-de-murrieta/castillo-ygay-gran-reserva-especial"
     }
   ]
 }
