@@ -47,10 +47,16 @@ def fmt_score(home: int | None, away: int | None) -> str:
 
 
 def wine_label(row, *, with_vintage: bool = True) -> str:
-    """'Barolo 2018 — Vietti' from a wines row, skipping missing pieces."""
+    """'Barolo 2018 — Vietti' from a wines row, skipping missing pieces.
+
+    The vintage is only appended when the name doesn't already state it. Most of
+    the imported names end in their vintage, and it was read *out of* the name in
+    the first place, so appending unconditionally gives "Côte-Rôtie 2007 2007".
+    """
     parts = [row["name"]]
-    if with_vintage and row["vintage"]:
-        parts.append(str(row["vintage"]))
+    vintage = str(row["vintage"]) if row["vintage"] else None
+    if with_vintage and vintage and vintage not in row["name"]:
+        parts.append(vintage)
     label = " ".join(parts)
     if row["producer"]:
         label = f"{label} — {row['producer']}"

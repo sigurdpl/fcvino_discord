@@ -146,6 +146,27 @@ a `Sted` column that on bring-your-own nights records whose bottle each row is r
 where everyone was sitting. Every rule is checked against the sheet's own `Sum` and `Poeng`
 columns, which is how the import is known to have read the right cells.
 
+**Country, region, grape and vintage are filled in afterwards** by
+`scripts/enrich_wines.py`, since the spreadsheet never had those columns:
+
+```bash
+python scripts/enrich_wines.py --dry-run   # report, write nothing
+python scripts/enrich_wines.py             # fill in the blanks
+python scripts/enrich_wines.py --overwrite # redo rows already filled
+```
+
+Two sources, in that order. `bot/wine_origin.py` is a reference table of appellations,
+grapes and country names — the leverage being that across classical Europe *the appellation
+is the grape*: a Barolo is Nebbiolo, a Chablis is Chardonnay. That's law, not inference, so
+it can be tabulated. It places about 70% of the cellar by country and 77% by grape, and it
+never guesses: a theme like "Argentina vs Chile" names two countries, so it settles nothing.
+
+What the table can't place is looked up by hand and recorded in `seeds/wine_origins.json`
+with a source URL beside each claim. That file is in git — public facts about wine regions,
+unlike the ratings. Re-running the script prints whatever is still blank, which is the
+worklist for the next round of lookups. Anything unverifiable is left blank rather than
+filled with a plausible guess.
+
 **Ratings are keyed on names, not Discord accounts**, because that's what the spreadsheet
 knows. Boards show a plain name until someone runs `/wine iam` to claim it, after which
 they get a proper mention and `/wine mine` finds their history.

@@ -1,0 +1,127 @@
+{
+  "_readme": [
+    "Wines the reference table in bot/wine_origin.py cannot place, looked up by hand.",
+    "Applied by scripts/enrich_wines.py, which prefers these over the table because an",
+    "entry here is a deliberate statement about one specific wine.",
+    "",
+    "In git on purpose: these are public facts about wine regions, unlike the ratings in",
+    "data/fcvino.sqlite3. 'source' records where the claim came from so it can be checked.",
+    "",
+    "Match is on the wine's name, accent- and case-insensitive. Every field is optional;",
+    "leave one out rather than guessing. Set 'non_wine': true for beer or spirits, which",
+    "get a country and never a grape."
+  ],
+  "_example": {
+    "name": "Tignanello 2011",
+    "country": "Italy",
+    "region": "Toscana",
+    "grape": "Sangiovese",
+    "source": "https://example.org/producer-page"
+  },
+  "wines": [
+    {
+      "name": "Tignanello 2011",
+      "country": "Italy",
+      "region": "Toscana",
+      "grape": "Sangiovese",
+      "note": "85% Sangiovese, 10% Cabernet Sauvignon, 5% Cabernet Franc",
+      "source": "https://www.antinori.it/en/vino/tignanello-en/"
+    },
+    {
+      "name": "Numanthia 2009",
+      "country": "Spain",
+      "region": "Toro",
+      "grape": "Tempranillo",
+      "note": "100% Tinta de Toro, the local name for Tempranillo",
+      "source": "https://www.numanthia.com/en-ww/our-wines/tempranillo-tinta-de-toro"
+    },
+    {
+      "name": "Numanthia Termes 09",
+      "country": "Spain",
+      "region": "Toro",
+      "grape": "Tempranillo",
+      "source": "https://www.numanthia.com/en-ww/our-wines"
+    },
+    {
+      "name": "Don Melchor 2007",
+      "country": "Chile",
+      "region": "Maipo Valley",
+      "grape": "Cabernet Sauvignon",
+      "note": "Puente Alto, Concha y Toro",
+      "source": "https://top100.winespectator.com/2024/wine/wine-no-1-2/"
+    },
+    {
+      "name": "Don Melchor 2007 98% Cab, 2% Cab Franc (549kr)",
+      "country": "Chile",
+      "region": "Maipo Valley",
+      "grape": "Cabernet Sauvignon",
+      "source": "https://top100.winespectator.com/2024/wine/wine-no-1-2/"
+    },
+    {
+      "name": "Protos Reserva 2009",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "source": "https://www.winewithseth.com/winewiki/protos/"
+    },
+    {
+      "name": "Protos Reserva 09",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "source": "https://www.winewithseth.com/winewiki/protos/"
+    },
+    {
+      "name": "Protos Roble 11",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "source": "https://www.winewithseth.com/winewiki/protos/"
+    },
+    {
+      "name": "Pesquera Reserva Special 2003",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "note": "Bodegas Alejandro Fernández, Tinto Pesquera",
+      "source": "https://familiafernandezrivera.com/bodegas/tinto-pesquera/"
+    },
+    {
+      "name": "Pesquera Crianza 2011",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "source": "https://familiafernandezrivera.com/bodegas/tinto-pesquera/"
+    },
+    {
+      "name": "Finis Terrae 2009",
+      "country": "Chile",
+      "region": "Maipo Valley",
+      "grape": "Cabernet Sauvignon",
+      "note": "Cousiño Macul; Cab-dominant with Merlot and Syrah",
+      "source": "https://cousinomacul.com/en/products/finis-terrae-red-blend"
+    },
+    {
+      "name": "Finis Terrae Cab, Merlot, Syrah 2009 (222 kr)",
+      "country": "Chile",
+      "region": "Maipo Valley",
+      "grape": "Cabernet Sauvignon",
+      "source": "https://cousinomacul.com/en/products/finis-terrae-red-blend"
+    },
+    {
+      "name": "Weinerrt Gran Vino 2007",
+      "country": "Argentina",
+      "region": "Mendoza",
+      "grape": "Bordeaux blend",
+      "note": "Weinert; 40% Malbec, 35% Cabernet Sauvignon, 25% Merlot",
+      "source": "https://www.vivino.com/en/bodega-y-cavas-de-weinert-cavas-de-weinert-gran-vino/w/2470"
+    },
+    {
+      "name": "Testalonga Baby Bandito Follow your dreams",
+      "country": "South Africa",
+      "region": "Swartland",
+      "note": "grape left out on purpose: sources describe the Baby Bandito range as Chenin but do not confirm this bottling",
+      "source": "https://www.littlewine.io/winemaker-magazine/testalonga"
+    }
+  ]
+}

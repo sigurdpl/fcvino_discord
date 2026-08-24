@@ -17,6 +17,7 @@ from bot.formatting import (
     local_day,
     medal,
     truncate,
+    wine_label,
 )
 
 OSLO = ZoneInfo("Europe/Oslo")
@@ -110,3 +111,19 @@ def test_fill_fits_a_realistic_archive_in_the_description():
     e = fill(discord.Embed(title="t"), lines)
     assert e.description is not None and len(e.fields) == 0
     assert len(e.description) < DESCRIPTION_LIMIT
+
+
+def test_wine_label_does_not_repeat_a_vintage_already_in_the_name():
+    # The vintage was read out of the name, so appending it duplicates it.
+    row = {"name": "Clusel Roch Côte-Rôtie 2007", "vintage": 2007, "producer": None}
+    assert wine_label(row) == "Clusel Roch Côte-Rôtie 2007"
+
+
+def test_wine_label_adds_a_vintage_the_name_lacks():
+    row = {"name": "Barolo", "vintage": 2018, "producer": "Vietti"}
+    assert wine_label(row) == "Barolo 2018 — Vietti"
+
+
+def test_wine_label_without_a_vintage():
+    row = {"name": "Mother Rock Brutal!", "vintage": None, "producer": None}
+    assert wine_label(row) == "Mother Rock Brutal!"

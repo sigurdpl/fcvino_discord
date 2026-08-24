@@ -16,6 +16,8 @@ import datetime
 import re
 from typing import Any, NamedTuple
 
+from .wine_origin import clean_name
+
 # The members, in the order their columns appear. Marius only has columns in the
 # 2013 and 2014 sheets, and only a handful of scores — but including him is what
 # makes the scores read here add up to those sheets' own Sum column exactly, so
@@ -259,6 +261,18 @@ def clean_text(value: Any) -> str | None:
     return text or None
 
 
+def clean_wine_name(value: Any) -> str | None:
+    """A wine's name with the pouring-order label removed.
+
+    Done here, where the cell is first read, rather than in a later pass: the
+    name is the identity `scripts/import_vinotek.py` matches a wine on, so
+    rewriting it afterwards would make the next import insert duplicates instead
+    of updating.
+    """
+    text = clean_text(value)
+    return clean_name(text) or None if text else None
+
+
 def tasting_key(period: Period | None, theme: str | None) -> str:
     """A stable identity for a tasting: when it happened and what it was about.
 
@@ -309,7 +323,7 @@ def parse_row(
             return None
         return row[position]
 
-    name = clean_text(cell(columns.wine))
+    name = clean_wine_name(cell(columns.wine))
     if not name:
         return None, "no wine name"
     if looks_like_summary(cell(columns.wine)):
