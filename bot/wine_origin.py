@@ -156,6 +156,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "pauillac": (FRANCE, "Pauillac", BORDEAUX_BLEND),
     "saint julien": (FRANCE, "Saint-Julien", BORDEAUX_BLEND),
     "saint estephe": (FRANCE, "Saint-Estèphe", BORDEAUX_BLEND),
+    "lalande de pomerol": (FRANCE, "Lalande-de-Pomerol", "Merlot"),
     "pomerol": (FRANCE, "Pomerol", "Merlot"),
     "saint emilion": (FRANCE, "Saint-Émilion", "Merlot"),
     "listrac": (FRANCE, "Listrac-Médoc", BORDEAUX_BLEND),
@@ -202,6 +203,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "corton charlemagne": (FRANCE, "Corton-Charlemagne", "Chardonnay"),
     "santenay": (FRANCE, "Santenay", "Pinot Noir"),
     "mercurey": (FRANCE, "Mercurey", "Pinot Noir"),
+    "mercury": (FRANCE, "Mercurey", "Pinot Noir"),  # spelled this way in the sheet
     "rully": (FRANCE, "Rully", "Chardonnay"),
     "givry": (FRANCE, "Givry", "Pinot Noir"),
     "montagny": (FRANCE, "Montagny", "Chardonnay"),
@@ -242,6 +244,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "coteaux du layon": (FRANCE, "Coteaux du Layon", "Chenin Blanc"),
     "alsace": (FRANCE, "Alsace", None),
     "champagne": (FRANCE, "Champagne", CHAMPAGNE_BLEND),
+    "ambonnay": (FRANCE, "Champagne", CHAMPAGNE_BLEND),  # a Champagne grand cru village
     "arbois": (FRANCE, "Arbois", None),
     "cotes du jura": (FRANCE, "Côtes du Jura", None),
     "jura": (FRANCE, "Jura", None),
@@ -308,6 +311,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "friuli": (ITALY, "Friuli", None),
     "franciacorta": (ITALY, "Franciacorta", "Chardonnay"),
     "prosecco": (ITALY, "Prosecco", "Glera"),
+    "valdobbiadene": (ITALY, "Valdobbiadene", "Glera"),
     "gavi": (ITALY, "Gavi", "Cortese"),
     "asti": (ITALY, "Asti", None),
     "alba": (ITALY, "Alba", None),
@@ -380,6 +384,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "nemea": (GREECE, "Nemea", "Agiorgitiko"),
     "naoussa": (GREECE, "Naoussa", "Xinomavro"),
     "musar": (LEBANON, "Bekaa Valley", None),
+    "hochar": (LEBANON, "Bekaa Valley", None),  # Château Musar's second label
     "bekaa": (LEBANON, "Bekaa Valley", None),
     # -- United States ----------------------------------------------------
     "napa": (USA, "Napa Valley", None),

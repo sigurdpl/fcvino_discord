@@ -302,6 +302,98 @@
       "grape": "Tempranillo",
       "note": "Marqués de Murrieta; Tempranillo with about 15% Mazuelo",
       "source": "https://mmdusa.net/portfolio/marques-de-murrieta/castillo-ygay-gran-reserva-especial"
+    },
+    {
+      "name": "Ch. Moulin de Sales 2019",
+      "country": "France",
+      "region": "Lalande-de-Pomerol",
+      "grape": "Merlot",
+      "note": "Merlot-dominant with Cabernet Franc",
+      "source": "https://www.vivino.com/en/moulin-de-sales-lalande-de-pomerol/w/1257354"
+    },
+    {
+      "name": "Chiara Boschis Via Mosconi 2009",
+      "country": "Italy",
+      "region": "Barolo",
+      "grape": "Nebbiolo",
+      "note": "E. Pira / Chiara Boschis; the Mosconi cru in Monforte d'Alba",
+      "source": "http://www.pira-chiaraboschis.com/Barolo_Mosconi.html"
+    },
+    {
+      "name": "M. Chapoutier Deschants 2018",
+      "country": "France",
+      "region": "Saint-Joseph",
+      "grape": "Syrah",
+      "source": "https://www.chapoutier.com/en/shop/deschants/2023/50"
+    },
+    {
+      "name": "Bessa Enira Reserva",
+      "country": "Bulgaria",
+      "region": "Thracian Valley",
+      "note": "grape left out: the blend swings between Merlot- and Syrah-dominant by vintage",
+      "source": "https://bessavalley.com/wines/"
+    },
+    {
+      "name": "Kavlikadere Egeo 2010",
+      "country": "Turkey",
+      "region": "Aegean",
+      "note": "grape left out: Kavaklidere bottles Egeo as Chardonnay, Cabernet, Malbec and blends, and this entry doesn't say which",
+      "source": "https://iwsc.net/results/detail/136393/egeo-merlot-syrah-cabernet-sauvignon-2020"
+    },
+    {
+      "name": "Downie Bull Swamp 2022",
+      "country": "Australia",
+      "region": "Gippsland",
+      "grape": "Pinot Noir",
+      "note": "William Downie, Bull Swamp vineyard",
+      "source": "https://www.indigowine.com/wp-content/uploads/2022/08/Downie_Bull-Swamp.pdf"
+    },
+    {
+      "name": "Occhipinti SP 68 Rosso",
+      "country": "Italy",
+      "region": "Vittoria",
+      "grape": "Frappato",
+      "note": "Arianna Occhipinti; 70% Frappato, 30% Nero d'Avola",
+      "source": "https://primalwine.com/products/sp68-rosso-arianna-occhipinti-natural-wine"
+    },
+    {
+      "name": "Veronica Ortega Kinki",
+      "country": "Spain",
+      "region": "Bierzo",
+      "grape": "Mencía",
+      "note": "Verónica Ortega; 60% Mencía with Palomino, Godello and Alicante Bouschet",
+      "source": "https://spanishwinelover.com/winerie/veronica-ortega"
+    },
+    {
+      "name": "Nyetimber Classic Cuvee",
+      "country": "England",
+      "region": "West Sussex",
+      "grape": "Chardonnay",
+      "note": "50-60% Chardonnay with Pinot Noir and Pinot Meunier",
+      "source": "https://nyetimber.com/product/classic-cuvee-mv/"
+    },
+    {
+      "name": "Bisol Crede Valdob Pros Sup Brut",
+      "country": "Italy",
+      "region": "Valdobbiadene",
+      "grape": "Glera",
+      "note": "85% Glera with Chardonnay",
+      "source": "https://bisol.it/bisol/en/wines/crede/"
+    },
+    {
+      "name": "Brundlmayer Langenloiser Käferberg 1ÖTW 2018",
+      "country": "Austria",
+      "region": "Kamptal",
+      "note": "grape left out: bottled as both Grüner Veltliner and Riesling",
+      "source": "https://www.bruendlmayer.at/en/wines/langenloiser-kaeferberg-1oetw-gruener-veltliner-2015/"
+    },
+    {
+      "name": "Alenza Gran Reserva 2006",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "note": "Condado de Haza; 100% Tempranillo from Viña Valera",
+      "source": "https://www.decantalo.com/us/en/alenza-gran-reserva.html"
     }
   ]
 }
