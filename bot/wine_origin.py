@@ -72,6 +72,10 @@ GRAPES: dict[str, str] = {
     "riesling": "Riesling",
     "sauvignon blanc": "Sauvignon Blanc", "sauvignon gris": "Sauvignon Blanc",
     "cabernet sauvignon": "Cabernet Sauvignon",
+    # "Cabernet" alone almost always means Sauvignon; longest-match still sends
+    # "Cabernet Franc" to the right place. "Cab S" is how the sheet abbreviates it.
+    "cabernet": "Cabernet Sauvignon", "cab s": "Cabernet Sauvignon",
+    "cab sauv": "Cabernet Sauvignon",
     "cabernet franc": "Cabernet Franc",
     "merlot": "Merlot",
     "malbec": "Malbec", "cot": "Malbec",
@@ -120,8 +124,8 @@ GRAPES: dict[str, str] = {
     "furmint": "Furmint",
     "assyrtiko": "Assyrtiko",
     "xinomavro": "Xinomavro",
-    "agiorgitiko": "Agiorgitiko",
-    "saperavi": "Saperavi",
+    "agiorgitiko": "Agiorgitiko", "agiorgitikoo": "Agiorgitiko",
+    "saperavi": "Saperavi", "superavi": "Saperavi",  # spelled thus in the sheet
     "chenin blanc": "Chenin Blanc", "chenin": "Chenin Blanc",
     "pinotage": "Pinotage",
     "cinsault": "Cinsault", "cincault": "Cinsault",
@@ -143,9 +147,13 @@ GRAPES: dict[str, str] = {
     "refosco": "Refosco",
     "lagrein": "Lagrein",
     "teroldego": "Teroldego",
-    "ribolla": "Ribolla Gialla",
+    "ribolla": "Ribolla Gialla", "rebula": "Ribolla Gialla",
     "friulano": "Friulano",
     "turbiana": "Turbiana",
+    "verdicchio": "Verdicchio",
+    "xarel lo": "Xarel-lo",
+    "blauer wildbacher": "Blauer Wildbacher",
+    "chiavennasca": "Nebbiolo",  # what Valtellina calls Nebbiolo
 }
 
 # Appellation or region -> (country, region shown, the grape it is by law or
@@ -211,6 +219,8 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "saint veran": (FRANCE, "Saint-Véran", "Chardonnay"),
     "macon": (FRANCE, "Mâcon", "Chardonnay"),
     "beaune": (FRANCE, "Beaune", "Pinot Noir"),
+    "coteaux bourguignons": (FRANCE, "Bourgogne", None),
+    "saint romain": (FRANCE, "Saint-Romain", None),
     "bourgogne": (FRANCE, "Bourgogne", None),
     "burgund": (FRANCE, "Bourgogne", None),
     # -- France: Rhône ----------------------------------------------------
@@ -267,6 +277,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "vin de france": (FRANCE, None, None),
     "languedoc": (FRANCE, "Languedoc", None),
     "provence": (FRANCE, "Provence", None),
+    "cotes de provence": (FRANCE, "Côtes de Provence", None),
     "cahors": (FRANCE, "Cahors", "Malbec"),
     "madiran": (FRANCE, "Madiran", "Tannat"),
     "jurancon": (FRANCE, "Jurançon", None),
@@ -294,6 +305,10 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "bardolino": (ITALY, "Bardolino", "Corvina"),
     "soave": (ITALY, "Soave", "Garganega"),
     "lugana": (ITALY, "Lugana", "Turbiana"),
+    "valtellina": (ITALY, "Valtellina", "Nebbiolo"),
+    "sant antimo": (ITALY, "Sant'Antimo", None),
+    "castelli di jesi": (ITALY, "Castelli di Jesi", "Verdicchio"),
+    "marche": (ITALY, "Marche", None),
     "etna": (ITALY, "Etna", "Nerello Mascalese"),
     "cerasuolo di vittoria": (ITALY, "Cerasuolo di Vittoria", "Frappato"),
     "sicilia": (ITALY, "Sicilia", None),
@@ -331,6 +346,8 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "bierzo": (SPAIN, "Bierzo", "Mencía"),
     "rueda": (SPAIN, "Rueda", "Verdejo"),
     "rias baixas": (SPAIN, "Rías Baixas", "Albariño"),
+    "gredos": (SPAIN, "Sierra de Gredos", "Grenache"),
+    "granada": (SPAIN, "Granada", None),
     "valdeorras": (SPAIN, "Valdeorras", "Godello"),
     "ribeira sacra": (SPAIN, "Ribeira Sacra", "Mencía"),
     "jumilla": (SPAIN, "Jumilla", "Mourvèdre"),
@@ -355,6 +372,8 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "colares": (PORTUGAL, "Colares", "Ramisco"),
     "setubal": (PORTUGAL, "Setúbal", None),
     "madeira": (PORTUGAL, "Madeira", None),
+    "acores": (PORTUGAL, "Azores", None),
+    "azores": (PORTUGAL, "Azores", None),
     "bucelas": (PORTUGAL, "Bucelas", "Arinto"),
     "lisboa": (PORTUGAL, "Lisboa", None),
     # -- Germany, Austria, Hungary ----------------------------------------
@@ -375,6 +394,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "neusiedlersee": (AUSTRIA, "Neusiedlersee", None),
     "weinviertel": (AUSTRIA, "Weinviertel", "Grüner Veltliner"),
     "steiermark": (AUSTRIA, "Steiermark", None),
+    "schilcher": (AUSTRIA, "Steiermark", "Blauer Wildbacher"),
     "tokaj": (HUNGARY, "Tokaj", "Furmint"),
     "tokaji": (HUNGARY, "Tokaj", "Furmint"),
     "szekszard": (HUNGARY, "Szekszárd", None),
@@ -383,6 +403,7 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "santorini": (GREECE, "Santorini", "Assyrtiko"),
     "nemea": (GREECE, "Nemea", "Agiorgitiko"),
     "naoussa": (GREECE, "Naoussa", "Xinomavro"),
+    "noussa": (GREECE, "Naoussa", "Xinomavro"),  # spelled thus in the sheet
     "musar": (LEBANON, "Bekaa Valley", None),
     "hochar": (LEBANON, "Bekaa Valley", None),  # Château Musar's second label
     "bekaa": (LEBANON, "Bekaa Valley", None),

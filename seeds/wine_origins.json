@@ -394,6 +394,94 @@
       "grape": "Tempranillo",
       "note": "Condado de Haza; 100% Tempranillo from Viña Valera",
       "source": "https://www.decantalo.com/us/en/alenza-gran-reserva.html"
+    },
+    {
+      "name": "Ch. Issan Blason d'Issan 2015",
+      "country": "France",
+      "region": "Margaux",
+      "grape": "Bordeaux blend",
+      "note": "second wine of Château d'Issan, third growth Margaux",
+      "source": "https://www.chateau-issan.com/en/vin_blason_d_issan.html"
+    },
+    {
+      "name": "Ch. Issan Blason d'Issan 2017",
+      "country": "France",
+      "region": "Margaux",
+      "grape": "Bordeaux blend",
+      "note": "second wine of Château d'Issan, third growth Margaux",
+      "source": "https://www.chateau-issan.com/en/vin_blason_d_issan.html"
+    },
+    {
+      "name": "Ch. Poujeaux 2011 Erk",
+      "country": "France",
+      "region": "Moulis-en-Médoc",
+      "grape": "Bordeaux blend",
+      "note": "Cru Bourgeois Exceptionnel; Cabernet-dominant",
+      "source": "https://www.wineenthusiast.com/buying-guide/chateau-poujeaux-2018-moulis-en-medoc/"
+    },
+    {
+      "name": "L'Espirit de Chevalier Rouge 2017",
+      "country": "France",
+      "region": "Pessac-Léognan",
+      "grape": "Bordeaux blend",
+      "note": "second wine of Domaine de Chevalier; the red is 63% Cabernet Sauvignon",
+      "source": "https://www.bordeaux-tradition.com/en/vins/esprit-de-chevalier-red/"
+    },
+    {
+      "name": "Sarget de Gruard Larose 2009",
+      "country": "France",
+      "region": "Saint-Julien",
+      "grape": "Bordeaux blend",
+      "note": "second wine of Château Gruaud-Larose, second growth Saint-Julien. Spelled 'Gruard' in the sheet",
+      "source": "https://www.thewinecellarinsider.com/bordeaux-wine-producer-profiles/bordeaux/st-julien/gruaud-larose/"
+    },
+    {
+      "name": "Cune Imperial Gran Reserva 2001",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "CVNE Imperial; 85% Tempranillo with Graciano and Mazuelo, from Rioja Alta",
+      "source": "https://cvne.com/en/wines/imperial-gran-reserva/"
+    },
+    {
+      "name": "Viña Ardanza Reserva 2005",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "La Rioja Alta; 80% Tempranillo, 20% Garnacha",
+      "source": "https://www.skurnik.com/sku/rioja-reserva-vina-ardanza-la-rioja-alta-5-2-2-2-2-4-3-2-2-3/"
+    },
+    {
+      "name": "Viña Ardanza Reserva 2007",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "La Rioja Alta; 80% Tempranillo, 20% Garnacha",
+      "source": "https://www.skurnik.com/sku/rioja-reserva-vina-ardanza-la-rioja-alta-5-2-2-2-2-4-3-2-2-3/"
+    },
+    {
+      "name": "Vina Alberdi Crianza",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "La Rioja Alta; 100% Tempranillo",
+      "source": "https://www.moraswines.com/la-rioja-alta-a-tradition-of-passion-in-rioja-wine/"
+    },
+    {
+      "name": "Muga Reserva 2016 (37,5 cl)",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "70% Tempranillo, 20% Garnacha, with Mazuelo and Graciano",
+      "source": "https://en.wikipedia.org/wiki/Bodegas_Muga"
+    },
+    {
+      "name": "Contino Rosado 2019",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Grenache",
+      "note": "Contino (CVNE) in Rioja Alavesa; the rosado is Garnacha-led with Graciano",
+      "source": "https://cvne.com/en/wines/contino-rose/"
     }
   ]
 }
