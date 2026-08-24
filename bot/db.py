@@ -16,9 +16,11 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
+-- `brought_by` is per wine, not per tasting: at a bring-your-own night every
+-- bottle names a different person, which is exactly the thing worth keeping.
 CREATE TABLE IF NOT EXISTS wines (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
@@ -29,19 +31,51 @@ CREATE TABLE IF NOT EXISTS wines (
     grape       TEXT,
     price_nok   INTEGER,
     bought_at   TEXT,
+    tasting_id  INTEGER REFERENCES tastings(id) ON DELETE SET NULL,
+    brought_by  TEXT,
     added_by    INTEGER NOT NULL,
     added_at    TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(name);
 
+-- Who tasted what. Keyed on wine_members rather than a Discord id, because the
+-- club's history comes from a spreadsheet that knows people by first name and
+-- has no idea what Discord is. A member gets a discord_id when they claim their
+-- name with /wine iam.
 CREATE TABLE IF NOT EXISTS wine_ratings (
     wine_id   INTEGER NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
-    user_id   INTEGER NOT NULL,
+    member_id INTEGER NOT NULL REFERENCES wine_members(id) ON DELETE CASCADE,
     score     INTEGER NOT NULL CHECK (score BETWEEN 1 AND 100),
     notes     TEXT,
     rated_at  TEXT    NOT NULL,
-    PRIMARY KEY (wine_id, user_id)
+    PRIMARY KEY (wine_id, member_id)
 );
+
+CREATE TABLE IF NOT EXISTS wine_members (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL UNIQUE,
+    discord_id INTEGER UNIQUE
+);
+
+-- One evening: a theme, a host's living room, and the wines opened there. The
+-- spreadsheet's Tid/Tema/Sted columns had nowhere to live before this.
+--
+-- `key` is a deterministic "2021-12|BYO|Lennart" and is what makes re-running
+-- the import idempotent. It exists because SQLite treats NULLs as distinct in a
+-- UNIQUE index, so UNIQUE(year, month, theme, location) would cheerfully insert
+-- 2013's month-less tastings a second time. `month` is null when the sheet only
+-- gave us a year.
+CREATE TABLE IF NOT EXISTS tastings (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    key      TEXT    NOT NULL UNIQUE,
+    year     INTEGER NOT NULL,
+    month    INTEGER,
+    theme    TEXT,
+    location TEXT,
+    host     TEXT,
+    added_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tastings_when ON tastings(year, month);
 
 CREATE TABLE IF NOT EXISTS members (
     user_id            INTEGER PRIMARY KEY,
@@ -222,8 +256,95 @@ class Database:
         self._migrate_guild_config()
         self._migrate_trip_match_city()
         self._migrate_trip_year_key()
+        self._migrate_tasting_host()
+        self._migrate_wine_columns()
+        self._migrate_wine_ratings_members()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         conn.commit()
+
+    def _migrate_tasting_host(self) -> None:
+        """Add tastings.host to a database created before it existed."""
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(tastings)")}
+        if columns and "host" not in columns:
+            conn.execute("ALTER TABLE tastings ADD COLUMN host TEXT")
+            conn.commit()
+            log.info("added tastings.host")
+
+    def _migrate_wine_columns(self) -> None:
+        """Add wines.tasting_id and wines.brought_by where they're missing."""
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(wines)")}
+        if not columns:
+            return
+        for column, ddl in (
+            (
+                "tasting_id",
+                "ALTER TABLE wines ADD COLUMN tasting_id INTEGER REFERENCES tastings(id)",
+            ),
+            ("brought_by", "ALTER TABLE wines ADD COLUMN brought_by TEXT"),
+        ):
+            if column not in columns:
+                conn.execute(ddl)
+                conn.commit()
+                log.info("added wines.%s", column)
+        # Declared here rather than in SCHEMA: executescript runs before this
+        # migration, so on an existing database the column wouldn't exist yet.
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_wines_tasting ON wines(tasting_id)")
+        conn.commit()
+
+    def _migrate_wine_ratings_members(self) -> None:
+        """Re-key wine_ratings from a Discord user id onto wine_members.
+
+        The spreadsheet the club's history comes from knows people by first name,
+        so a NOT NULL user_id in the primary key made those ratings unstorable.
+        Dropping a primary key column means rebuilding the table.
+
+        Any rows already present are carried over: each distinct user id becomes
+        a member whose name is a placeholder and whose discord_id is that user,
+        so nobody's rating is dropped on the way through.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(wine_ratings)")}
+        if not columns or "user_id" not in columns:
+            return
+
+        existing = conn.execute("SELECT * FROM wine_ratings").fetchall()
+        for row in existing:
+            conn.execute(
+                """INSERT INTO wine_members (name, discord_id) VALUES (?, ?)
+                   ON CONFLICT(discord_id) DO NOTHING""",
+                (f"discord:{row['user_id']}", row["user_id"]),
+            )
+        conn.executescript(
+            """CREATE TABLE wine_ratings_rebuilt (
+                   wine_id   INTEGER NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+                   member_id INTEGER NOT NULL REFERENCES wine_members(id) ON DELETE CASCADE,
+                   score     INTEGER NOT NULL CHECK (score BETWEEN 1 AND 100),
+                   notes     TEXT,
+                   rated_at  TEXT    NOT NULL,
+                   PRIMARY KEY (wine_id, member_id)
+               );"""
+        )
+        for row in existing:
+            member = conn.execute(
+                "SELECT id FROM wine_members WHERE discord_id=?", (row["user_id"],)
+            ).fetchone()
+            conn.execute(
+                """INSERT INTO wine_ratings_rebuilt
+                       (wine_id, member_id, score, notes, rated_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (row["wine_id"], member["id"], row["score"], row["notes"], row["rated_at"]),
+            )
+        conn.executescript(
+            """DROP TABLE wine_ratings;
+               ALTER TABLE wine_ratings_rebuilt RENAME TO wine_ratings;"""
+        )
+        conn.commit()
+        log.info("wine_ratings re-keyed onto wine_members (%d row(s) carried over)", len(existing))
 
     def _migrate_trip_match_city(self) -> None:
         """Add trip_matches.city to a database created before it existed.

@@ -36,6 +36,8 @@ def test_schema_creates_every_table(db):
         "announcements",
         "guild_channels",
         "bot_messages",
+        "tastings",
+        "wine_members",
         "trips",
         "trip_matches",
         "trip_goals",
@@ -105,10 +107,12 @@ def test_deleting_a_wine_cascades_to_its_ratings(db):
         "INSERT INTO wines (name, added_by, added_at) "
         "VALUES ('Barolo', 1, '2026-01-01T00:00:00+00:00')"
     )
+    db.execute("INSERT INTO wine_members (name) VALUES ('Andy')")
+    member_id = db.query_one("SELECT id FROM wine_members WHERE name='Andy'")["id"]
     db.execute(
-        "INSERT INTO wine_ratings (wine_id, user_id, score, rated_at) "
-        "VALUES (?, 1, 92, '2026-01-01T00:00:00+00:00')",
-        (wine_id,),
+        "INSERT INTO wine_ratings (wine_id, member_id, score, rated_at) "
+        "VALUES (?, ?, 92, '2026-01-01T00:00:00+00:00')",
+        (wine_id, member_id),
     )
     db.execute("DELETE FROM wines WHERE id=?", (wine_id,))
     assert db.query("SELECT * FROM wine_ratings") == []

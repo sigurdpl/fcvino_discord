@@ -119,9 +119,36 @@ Proves the football key works on its own, so if `/football fixtures` misbehaves 
 | `/wine value` | Best rating points per 100 kr |
 | `/wine search` | Match on name, producer, country, region or grape |
 | `/wine mine` | Your own tasting book |
+| `/wine iam` | Claim your name from the imported records, so old scores become yours |
 | `/wine remove` | Delete a bottle you added (admins can delete any) |
 
 Bottle names autocomplete, so nobody types database ids.
+
+**Thirteen years of history are already in there.** `scripts/import_vinotek.py` loads the
+club's `FC Vino Vinotek.xlsx` — 144 tastings, 1016 wines and 7456 ratings from 2013 onward:
+
+```bash
+python scripts/import_vinotek.py --dry-run   # report, write nothing
+python scripts/import_vinotek.py             # load it
+python scripts/import_vinotek.py --reset     # reload from scratch after a rule change
+```
+
+The workbook lives in `data/`, which is gitignored — unlike the football results in
+`seeds/`, these are nine people's own scores and don't belong in a public repo. Parsing
+rules live in `bot/vinotek.py` and are unit-tested; the importer only does file reading and
+writing. It's safe to re-run.
+
+The spreadsheet grew by hand over thirteen years, so the importer handles what's actually
+in it rather than what a tidy sheet would contain: eight ways of writing a month
+(`okt18`, `Setember 2021`, `0524`, `Møte 03 2023`), a year typed as `2323`, scores out of
+ten before 2017 and out of a hundred after, two tables side by side on the 2016 sheet, and
+a `Sted` column that on bring-your-own nights records whose bottle each row is rather than
+where everyone was sitting. Every rule is checked against the sheet's own `Sum` and `Poeng`
+columns, which is how the import is known to have read the right cells.
+
+**Ratings are keyed on names, not Discord accounts**, because that's what the spreadsheet
+knows. Boards show a plain name until someone runs `/wine iam` to claim it, after which
+they get a proper mention and `/wine mine` finds their history.
 
 ### ✈️ Trips
 

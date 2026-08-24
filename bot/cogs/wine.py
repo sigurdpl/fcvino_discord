@@ -131,8 +131,44 @@ class Wine(commands.Cog):
         )
 
     def _rating_rows(self, wine_id: int) -> list[sqlite3.Row]:
+        """A wine's ratings with the rater's name and Discord id, best first."""
         return self.db.query(
-            "SELECT * FROM wine_ratings WHERE wine_id=? ORDER BY score DESC", (wine_id,)
+            """SELECT r.*, m.name AS member_name, m.discord_id
+               FROM wine_ratings r JOIN wine_members m ON m.id = r.member_id
+               WHERE r.wine_id=? ORDER BY r.score DESC""",
+            (wine_id,),
+        )
+
+    def _member_for(self, user: discord.abc.User) -> int:
+        """The wine_members row for a Discord user, creating one if needed.
+
+        Everyone in the spreadsheet already has a row; `/wine iam` is what
+        attaches a Discord account to it. Someone who rates a bottle without
+        having claimed a name gets their own row, so their score is never lost.
+        """
+        row = self.db.query_one("SELECT id FROM wine_members WHERE discord_id=?", (user.id,))
+        if row:
+            return row["id"]
+        name = getattr(user, "display_name", None) or f"discord:{user.id}"
+        self.db.execute(
+            """INSERT INTO wine_members (name, discord_id) VALUES (?, ?)
+               ON CONFLICT(name) DO UPDATE SET discord_id=excluded.discord_id""",
+            (name, user.id),
+        )
+        return self.db.query_one("SELECT id FROM wine_members WHERE discord_id=?", (user.id,))["id"]
+
+    @staticmethod
+    def _rater(row: sqlite3.Row) -> str:
+        """How to address a rater: a mention once they've claimed their name."""
+        if row["discord_id"]:
+            return f"<@{row['discord_id']}>"
+        return f"**{row['member_name']}**"
+
+    def _tasting_for(self, wine_id: int) -> sqlite3.Row | None:
+        return self.db.query_one(
+            """SELECT t.* FROM tastings t JOIN wines w ON w.tasting_id = t.id
+               WHERE w.id=?""",
+            (wine_id,),
         )
 
     # -- commands ----------------------------------------------------------
@@ -189,6 +225,70 @@ class Wine(commands.Cog):
         await interaction.response.send_message(embed=e)
         await self._announce(interaction, e)
 
+    @wine.command(name="iam", description="Claim your name from the club's records.")
+    @app_commands.describe(name="Your name as it appears in the tasting sheet")
+    async def iam(self, interaction: discord.Interaction, name: str) -> None:
+        """Attach a Discord account to a name from the spreadsheet.
+
+        Thirteen years of scores arrived keyed on first names. This is how those
+        become *your* scores, so `/wine mine` and the boards can address you.
+        """
+        row = self.db.query_one(
+            "SELECT * FROM wine_members WHERE LOWER(name)=LOWER(?)", (name.strip(),)
+        )
+        if row is None:
+            known = ", ".join(
+                r["name"] for r in self.db.query("SELECT name FROM wine_members ORDER BY name")
+            )
+            await interaction.response.send_message(
+                f"No **{truncate(name, 40)}** in the records. Known names: {known}",
+                ephemeral=True,
+            )
+            return
+        if row["discord_id"] and row["discord_id"] != interaction.user.id:
+            await interaction.response.send_message(
+                f"**{row['name']}** is already claimed by <@{row['discord_id']}>.", ephemeral=True
+            )
+            return
+
+        # Free the name from any row this user claimed before, so one account
+        # can't end up attached to two of them.
+        self.db.execute(
+            "UPDATE wine_members SET discord_id=NULL WHERE discord_id=? AND id<>?",
+            (interaction.user.id, row["id"]),
+        )
+        self.db.execute(
+            "UPDATE wine_members SET discord_id=? WHERE id=?", (interaction.user.id, row["id"])
+        )
+        count = self.db.query_one(
+            "SELECT COUNT(*) AS n FROM wine_ratings WHERE member_id=?", (row["id"],)
+        )
+        await interaction.response.send_message(
+            f"🍷 You are **{row['name']}** — {count['n']} ratings are yours.", ephemeral=True
+        )
+
+    @iam.autocomplete("name")
+    async def iam_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        term = current.strip().lower()
+        rows = self.db.query(
+            """SELECT m.name, m.discord_id, COUNT(r.score) AS n FROM wine_members m
+               LEFT JOIN wine_ratings r ON r.member_id = m.id
+               GROUP BY m.id ORDER BY n DESC""",
+        )
+        return [
+            app_commands.Choice(
+                name=truncate(
+                    f"{r['name']} — {r['n']} ratings" + (" (claimed)" if r["discord_id"] else ""),
+                    100,
+                ),
+                value=r["name"],
+            )
+            for r in rows
+            if not term or term in r["name"].lower()
+        ][:25]
+
     @wine.command(name="rate", description="Score a bottle out of 100 and leave notes.")
     @app_commands.describe(
         bottle="Start typing the wine name",
@@ -211,18 +311,19 @@ class Wine(commands.Cog):
             )
             return
 
+        member_id = self._member_for(interaction.user)
         previous = self.db.query_one(
-            "SELECT score FROM wine_ratings WHERE wine_id=? AND user_id=?",
-            (row["id"], interaction.user.id),
+            "SELECT score FROM wine_ratings WHERE wine_id=? AND member_id=?",
+            (row["id"], member_id),
         )
         self.db.execute(
-            """INSERT INTO wine_ratings (wine_id, user_id, score, notes, rated_at)
+            """INSERT INTO wine_ratings (wine_id, member_id, score, notes, rated_at)
                VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(wine_id, user_id) DO UPDATE SET
+               ON CONFLICT(wine_id, member_id) DO UPDATE SET
                    score=excluded.score, notes=excluded.notes, rated_at=excluded.rated_at""",
             (
                 row["id"],
-                interaction.user.id,
+                member_id,
                 int(score),
                 (notes or "").strip() or None,
                 utcnow_iso(),
@@ -267,11 +368,21 @@ class Wine(commands.Cog):
         )
         if row["bought_at"]:
             e.add_field(name="Bought at", value=row["bought_at"])
+        tasting = self._tasting_for(row["id"])
+        if tasting:
+            when = f"{tasting['year']}"
+            if tasting["month"]:
+                when = f"{tasting['year']}-{tasting['month']:02d}"
+            where = f" at {tasting['location']}" if tasting["location"] else ""
+            theme = f" · {tasting['theme']}" if tasting["theme"] else ""
+            e.add_field(name="Tasting", value=f"{when}{theme}{where}", inline=False)
+        if row["brought_by"]:
+            e.add_field(name="Brought by", value=row["brought_by"])
 
         if ratings:
             lines = []
             for r in ratings:
-                line = f"<@{r['user_id']}> **{r['score']}** {rating_bar(r['score'])}"
+                line = f"{self._rater(r)} {r['score']} {rating_bar(r['score'])}"
                 if r["notes"]:
                     line += f"\n> {truncate(r['notes'], 300)}"
                 lines.append(line)
@@ -370,8 +481,8 @@ class Wine(commands.Cog):
         rows = self.db.query(
             """SELECT w.*, r.score, r.notes, r.rated_at
                FROM wine_ratings r JOIN wines w ON w.id = r.wine_id
-               WHERE r.user_id = ? ORDER BY r.rated_at DESC LIMIT 25""",
-            (interaction.user.id,),
+               WHERE r.member_id = ? ORDER BY r.rated_at DESC LIMIT 25""",
+            (self._member_for(interaction.user),),
         )
         if not rows:
             await interaction.response.send_message(

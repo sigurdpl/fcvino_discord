@@ -47,6 +47,7 @@ class Core(commands.Cog):
             name="🍷 Wine",
             value=(
                 "`/wine add` — log a bottle\n"
+                "`/wine iam` — claim your name from the club's records\n"
                 "`/wine rate` — your score out of 100 plus tasting notes\n"
                 "`/wine show` — group average, everyone's notes\n"
                 "`/wine top` — best-rated bottles\n"
