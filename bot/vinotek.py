@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 import re
+from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 from .wine_origin import clean_name
@@ -369,3 +370,129 @@ def parse_row(
         ),
         None,
     )
+
+
+# -- undoing Excel's fill handle --------------------------------------------
+
+# Dragging a cell down in Excel does not copy it — it *extends the series*, so a
+# theme of "Top of the pops 2021" becomes 2022, 2023, 2024 on the rows below, and
+# a date of "juli24" becomes juli25, juli26. Three evenings in the workbook were
+# filled in this way, and the sheet's own arithmetic can't catch it because every
+# score is still correct; only the label of the evening is wrong.
+#
+# The signature is unmistakable and does not occur naturally: several rows that
+# agree on everything else, whose one differing field steps by exactly one, and
+# where each step carries exactly one wine. A real recurring evening — the club
+# genuinely holds a "Top of the pops" every January — pours eight or ten bottles
+# per year, never one.
+FILL_RUN = 4
+
+# A dragged block can have a row deleted from the middle afterwards, leaving a
+# hole in the series: the 2018 Gevrey-Chambertin evening runs February to
+# September with April missing, because that wine is in the per-year sheet but
+# not in Alltime. One hole still reads as a drag; two and the run is not dense
+# enough to be sure, so it is left alone.
+FILL_GAP = 1
+
+THEME_TRAILING_YEAR = re.compile(r"^(?P<stem>.*?)(?P<year>\d{4})\s*$")
+
+
+def _is_fill_run(values: Sequence[int]) -> bool:
+    """A dense ascending run: at least FILL_RUN values, at most FILL_GAP missing."""
+    ordered = sorted(set(values))
+    if len(ordered) < FILL_RUN:
+        return False
+    span = ordered[-1] - ordered[0] + 1
+    return span - len(ordered) <= FILL_GAP
+
+
+def _split_theme_year(theme: str | None) -> tuple[str, int] | None:
+    if not theme:
+        return None
+    m = THEME_TRAILING_YEAR.match(theme)
+    if not m:
+        return None
+    return m.group("stem"), int(m.group("year"))
+
+
+def undo_fill_handle(wines: Sequence[ParsedWine]) -> tuple[list[ParsedWine], list[str]]:
+    """Collapse a dragged series back onto the value it was dragged from.
+
+    Returns the repaired rows and a note for each evening put back together.
+    Only ever moves a row *earlier* in the series, because the fill handle
+    extends forwards from the cell that was typed.
+    """
+    repaired = list(wines)
+    notes: list[str] = []
+
+    def collapse(indices: dict[int, list[int]], describe, apply) -> None:
+        """`indices` maps a step value to the rows carrying it."""
+        if not _is_fill_run(list(indices)) or any(len(rows) != 1 for rows in indices.values()):
+            return
+        first = min(indices)
+        for step, rows in indices.items():
+            if step == first:
+                continue
+            for i in rows:
+                repaired[i] = apply(repaired[i], first)
+        notes.append(describe(first, max(indices), len(indices)))
+
+    # A dragged theme: same evening, same place, the year in the theme stepping.
+    by_stem: dict[tuple, dict[int, list[int]]] = {}
+    for i, wine in enumerate(repaired):
+        split = _split_theme_year(wine.theme)
+        if split is None:
+            continue
+        stem, year = split
+        key = (wine.period, stem.strip().lower(), (wine.location or "").lower())
+        by_stem.setdefault(key, {}).setdefault(year, []).append(i)
+
+    for (_, stem, _), years in list(by_stem.items()):
+        collapse(
+            years,
+            lambda lo, hi, n, stem=stem: (
+                f"theme {stem.strip()!r} was dragged {lo}→{hi}; "
+                f"{n} rows are one evening, filed under {lo}"
+            ),
+            lambda wine, year: wine._replace(
+                theme=f"{_split_theme_year(wine.theme)[0]}{year}"
+            ),
+        )
+
+    # A dragged date: same theme, same place, the year or the month stepping.
+    by_theme: dict[tuple, list[int]] = {}
+    for i, wine in enumerate(repaired):
+        if wine.period is None or not wine.theme:
+            continue
+        by_theme.setdefault((wine.theme.lower(), (wine.location or "").lower()), []).append(i)
+
+    for (theme, _), rows in by_theme.items():
+        months = {repaired[i].period.month for i in rows}
+        years = {repaired[i].period.year for i in rows}
+
+        if len(months) == 1:
+            steps: dict[int, list[int]] = {}
+            for i in rows:
+                steps.setdefault(repaired[i].period.year, []).append(i)
+            collapse(
+                steps,
+                lambda lo, hi, n, t=theme: (
+                    f"date on {t!r} was dragged {lo}→{hi}; "
+                    f"{n} rows are one evening, filed under {lo}"
+                ),
+                lambda wine, year: wine._replace(period=wine.period._replace(year=year)),
+            )
+        elif len(years) == 1 and None not in months:
+            steps = {}
+            for i in rows:
+                steps.setdefault(repaired[i].period.month, []).append(i)
+            collapse(
+                steps,
+                lambda lo, hi, n, t=theme: (
+                    f"month on {t!r} was dragged {lo}→{hi}; "
+                    f"{n} rows are one evening, filed under month {lo}"
+                ),
+                lambda wine, month: wine._replace(period=wine.period._replace(month=month)),
+            )
+
+    return repaired, notes

@@ -322,7 +322,13 @@ APPELLATIONS: dict[str, tuple[str, str, str | None]] = {
     "abruzzo": (ITALY, "Abruzzo", "Montepulciano"),
     # A theme of just "Montepulciano" could mean the grape or the Tuscan town,
     # so this claims the country and nothing more.
+    # Montepulciano is two places and a grape: a Tuscan town (Vino Nobile) and
+    # the Abruzzese variety. Bare, it settles only the country — but the full
+    # phrases must be keyed too, or longest-match hands "Vino Nobile di
+    # Montepulciano" to the vaguer key and drops both region and grape.
     "montepulciano": (ITALY, None, None),
+    "vino nobile di montepulciano": (ITALY, "Vino Nobile di Montepulciano", "Sangiovese"),
+    "rosso di montepulciano": (ITALY, "Rosso di Montepulciano", "Sangiovese"),
     "alto adige": (ITALY, "Alto Adige", None),
     "trentino": (ITALY, "Trentino", None),
     "collio": (ITALY, "Collio", None),

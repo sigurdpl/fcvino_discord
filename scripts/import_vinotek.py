@@ -103,6 +103,15 @@ def repair_missing_periods(harvest: Harvest) -> int:
     return repaired
 
 
+def undo_fill_handle(harvest: Harvest) -> list[str]:
+    """Repair evenings split apart by a dragged Excel cell. See bot/vinotek.py."""
+    sheets = [sheet for sheet, _ in harvest.wines]
+    repaired, notes = vinotek.undo_fill_handle([wine for _, wine in harvest.wines])
+    harvest.wines[:] = list(zip(sheets, repaired, strict=True))
+    harvest.notes.extend(notes)
+    return notes
+
+
 def drop_cross_sheet_duplicates(harvest: Harvest) -> int:
     """Remove rows recorded in two sheets.
 
@@ -324,7 +333,12 @@ def main(argv: list[str] | None = None) -> int:
 
     repaired = repair_missing_periods(harvest)
     dropped = drop_cross_sheet_duplicates(harvest)
+    unfilled = undo_fill_handle(harvest)
     print(f"\n  repaired dates: {repaired}   cross-sheet duplicates dropped: {dropped}")
+    if unfilled:
+        print("\n  evenings put back together after an Excel fill-handle drag:")
+        for note in unfilled:
+            print(f"    {note}")
 
     print("\n  skipped rows:")
     for reason, n in sorted(harvest.skips.items()):

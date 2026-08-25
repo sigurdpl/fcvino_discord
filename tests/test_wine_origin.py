@@ -268,3 +268,43 @@ def test_ribeiro_is_not_ribeira_sacra():
 )
 def test_the_spanish_whites_the_sheet_names(name, grape):
     assert derive(name).grape == grape
+
+
+def test_the_full_phrase_beats_the_ambiguous_word():
+    """"Montepulciano" alone settles only the country, and must not outrank
+    "Vino Nobile di Montepulciano", which settles region and grape too.
+
+    Longest-match handed eleven Tuscan wines to the vaguer key before this.
+    """
+    for name in (
+        "Contucci Vino Nobile di Montepulciano 2009",
+        "Poliziano Asinone Vino Nobile di Montepulciano 2012",
+        "Vino Nobile di Montepulciano Dei",
+    ):
+        assert derive(name) == ("Italy", "Vino Nobile di Montepulciano", "Sangiovese"), name
+
+
+def test_montepulciano_alone_still_refuses_to_guess():
+    # The grape and the town share a name; nothing here says which.
+    assert derive("Some Montepulciano 2015").region is None
+
+
+def test_no_vaguer_appellation_outranks_a_specific_one():
+    """A longer key that says less must never shadow a shorter key that says more.
+
+    Checked against real names from the archive that contain two appellation
+    keys at once — the only way this bug shows up.
+    """
+    ambiguous = [
+        "Contucci Vino Nobile di Montepulciano 2009",
+        "Poliziano Vino Nobile di Montepulciano 2020",
+        "Dei Vino Nobile di Montepulciano Riserva Bossano 2011",
+    ]
+    for name in ambiguous:
+        text = fold(name)
+        hits = [(k, v) for k, v in wine_origin.APPELLATIONS.items() if f" {k} " in text]
+        winner = max(hits, key=lambda kv: len(kv[0]))
+        detail = lambda v: sum(x is not None for x in v)  # noqa: E731
+        assert all(detail(v) <= detail(winner[1]) for _, v in hits), (
+            f"{name}: {winner[0]!r} wins but says less than a rival key"
+        )

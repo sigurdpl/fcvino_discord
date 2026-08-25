@@ -15,6 +15,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from .. import wine_stats as stats
 from ..db import utcnow_iso
 from ..formatting import (
     WINE_COLOUR,
@@ -31,6 +32,20 @@ log = logging.getLogger(__name__)
 
 MIN_RATINGS_FOR_BOARD = 2
 BOARD_DEFAULT_LIMIT = 10
+
+# The origin boards live in a code block, so every row has to be the same width
+# in a monospace font — Discord collapses runs of spaces everywhere else.
+ORIGIN_NAME_WIDTH = 22   # fits "Brunello di Montalcino" and "Touriga Nacional blend"
+ORIGIN_ROW = "{rank:>2}  {name:<22} {wines:>4}{mark:<1} {avg:>5}"
+MAX_ORIGIN_ROWS = 20
+
+# A bucket whose bottles were all poured on one night says as much about that
+# night as about the grape, so it is marked rather than quietly ranked.
+ONE_EVENING_MARK = "*"
+
+# Which columns can be ranked, and what to call one in a sentence. Also the
+# allow-list for the column name interpolated into _origin_rows' SQL.
+ORIGIN_FIELDS = {"country": "country", "region": "region", "grape": "grape"}
 
 
 # -- pure helpers (unit-tested in tests/test_wine.py) ------------------------
@@ -445,6 +460,124 @@ class Wine(commands.Cog):
             )
         e = embed("💰 Best value", colour=WINE_COLOUR, description="\n".join(lines))
         e.set_footer(text="Rating points per 100 kr")
+        await interaction.response.send_message(embed=e)
+
+    # -- what the cellar is made of ----------------------------------------
+
+    def _origin_rows(self, field: str) -> list[sqlite3.Row]:
+        """One row per rating, carrying the wine's `field` as the bucket to group on.
+
+        The field name is interpolated because SQLite can't parameterise a column,
+        so it is checked against ORIGIN_FIELDS first and never comes from the user
+        as free text.
+        """
+        assert field in ORIGIN_FIELDS
+        return self.db.query(
+            f"""SELECT w.{field} AS key, w.id AS wine_id, w.tasting_id AS tasting_id,
+                       r.score AS score
+                FROM wines w JOIN wine_ratings r ON r.wine_id = w.id
+                WHERE w.{field} IS NOT NULL"""
+        )
+
+    def _origin_embed(self, field: str, title: str, label: str) -> discord.Embed | None:
+        tallies = stats.tally(self._origin_rows(field))
+        if not tallies:
+            return None
+
+        shown = tallies[:MAX_ORIGIN_ROWS]
+        lines = [ORIGIN_ROW.format(rank="", name=label, wines="btl", mark="", avg="avg")]
+        for i, t in enumerate(shown, start=1):
+            lines.append(
+                ORIGIN_ROW.format(
+                    rank=i,
+                    name=truncate(t.name, ORIGIN_NAME_WIDTH),
+                    wines=t.wines,
+                    mark=ONE_EVENING_MARK if t.one_evening else "",
+                    avg=f"{t.average:.1f}",
+                )
+            )
+        e = embed(title, colour=WINE_COLOUR)
+        fill(e, ["```", *lines, "```"])
+
+        footer = f"{len(tallies)} with {stats.MIN_WINES}+ bottles"
+        if len(shown) < len(tallies):
+            footer += f" · top {len(shown)} of {len(tallies)}"
+        gap = stats.spread(tallies)
+        if gap is not None:
+            footer += f" · {gap:.1f} points across all {len(tallies)}"
+        if any(t.one_evening for t in shown):
+            footer += f"\n{ONE_EVENING_MARK} every bottle from one evening"
+        e.set_footer(text=footer)
+        return e
+
+    async def _send_origin_board(
+        self, interaction: discord.Interaction, field: str, title: str
+    ) -> None:
+        e = self._origin_embed(field, title, ORIGIN_FIELDS[field])
+        if e is None:
+            await interaction.response.send_message(
+                f"Nothing to rank yet — a {field} needs {stats.MIN_WINES} rated bottles "
+                "before it makes the board.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(embed=e)
+
+    @wine.command(name="countries", description="How the club rates each country.")
+    async def countries(self, interaction: discord.Interaction) -> None:
+        await self._send_origin_board(interaction, "country", "🌍 By country")
+
+    @wine.command(name="regions", description="How the club rates each region.")
+    async def regions(self, interaction: discord.Interaction) -> None:
+        await self._send_origin_board(interaction, "region", "🗺️ By region")
+
+    @wine.command(name="grapes", description="How the club rates each grape.")
+    async def grapes(self, interaction: discord.Interaction) -> None:
+        await self._send_origin_board(interaction, "grape", "🍇 By grape")
+
+    @wine.command(name="stats", description="The cellar in numbers.")
+    async def cellar_stats(self, interaction: discord.Interaction) -> None:
+        totals = self.db.query_one(
+            """SELECT (SELECT COUNT(*) FROM wines) AS wines,
+                      (SELECT COUNT(*) FROM wine_ratings) AS ratings,
+                      (SELECT COUNT(*) FROM tastings) AS tastings,
+                      (SELECT COUNT(*) FROM wine_members) AS members"""
+        )
+        if totals is None or not totals["wines"]:
+            await interaction.response.send_message(
+                "The cellar is empty. `/wine add` to put something in it.", ephemeral=True
+            )
+            return
+
+        e = embed("🍷 The cellar", colour=WINE_COLOUR)
+        headline = [
+            f"**{totals['wines']}** bottles across **{totals['tastings']}** tastings",
+            f"**{totals['ratings']}** ratings from **{totals['members']}** of us",
+        ]
+        span = self.db.query_one("SELECT MIN(year) AS first, MAX(year) AS last FROM tastings")
+        if span and span["first"]:
+            headline.append(f"tasting together since **{span['first']}**")
+        lines = [" · ".join(headline), ""]
+
+        for field, title in ORIGIN_FIELDS.items():
+            board = stats.tally(self._origin_rows(field))
+            if board:
+                best = board[0]
+                lines.append(
+                    f"**Best {title}** — {best.name} at {best.average:.1f} "
+                    f"_({best.wines} bottles)_"
+                )
+
+        known = stats.coverage(
+            self.db.query("SELECT country, region, grape, vintage FROM wines"),
+            list(ORIGIN_FIELDS) + ["vintage"],
+        )
+        lines.append("")
+        lines.append(
+            "Placed: " + " · ".join(f"{c.field} {c.share:.0%}" for c in known)
+        )
+        fill(e, lines)
+        e.set_footer(text="/wine countries · /wine regions · /wine grapes for the full boards")
         await interaction.response.send_message(embed=e)
 
     @wine.command(name="search", description="Find a bottle by name, producer, country or grape.")

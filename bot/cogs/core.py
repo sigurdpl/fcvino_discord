@@ -51,6 +51,8 @@ class Core(commands.Cog):
                 "`/wine rate` — your score out of 100 plus tasting notes\n"
                 "`/wine show` — group average, everyone's notes\n"
                 "`/wine top` — best-rated bottles\n"
+                "`/wine stats` — the cellar in numbers\n"
+                "`/wine countries` · `/wine regions` · `/wine grapes` — how we rate each\n"
                 "`/wine value` — best rating per krone\n"
                 "`/wine search` — find a bottle\n"
                 "`/wine mine` — your own ratings"

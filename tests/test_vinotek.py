@@ -310,3 +310,107 @@ def test_the_duplicate_signature_covers_the_name_and_every_score():
     # A genuine re-tasting scores differently, so it is not a duplicate.
     again = make({"Andy": 90, "Tore": 99}, ALLTIME)
     assert again.signature != late.signature
+
+
+# -- undoing Excel's fill handle --------------------------------------------
+
+
+def wine(period, theme, location, name):
+    return vinotek.ParsedWine(
+        period=period, theme=theme, location=location, brought_by=None,
+        name=name, price_nok=None, scores={"Morten": 90}, stated_average=None,
+        stated_total=None,
+    )
+
+
+def test_a_dragged_theme_year_collapses_to_the_typed_one():
+    """The 2022 sheet's January evening reads 'Top of the pops 2021' … '2030'.
+
+    Ten rows, one wine each, the year stepping by one: Excel extended the series
+    instead of copying the cell. The evening is the one reviewing 2021.
+    """
+    rows = [
+        wine(vinotek.Period(2022, 1), f"Top of the pops {2021 + i}", "Tore", f"Wine {i}")
+        for i in range(10)
+    ]
+    repaired, notes = vinotek.undo_fill_handle(rows)
+    assert {w.theme for w in repaired} == {"Top of the pops 2021"}
+    assert len(notes) == 1 and "2021→2030" in notes[0]
+
+
+def test_a_dragged_year_collapses_to_the_earliest():
+    # The Riesling evening: the 2019 sheet has all eight rows at juli19, while
+    # Alltime has them running juli19 → juli26.
+    rows = [
+        wine(vinotek.Period(2019 + i, 7), "Riesling", "Andy", f"Riesling {i}")
+        for i in range(8)
+    ]
+    repaired, _ = vinotek.undo_fill_handle(rows)
+    assert {w.period for w in repaired} == {vinotek.Period(2019, 7)}
+
+
+def test_a_dragged_month_collapses_to_the_earliest():
+    # 2018 Gevrey-Chambertin: February in the per-year sheet, February→September
+    # in Alltime, with April missing because that row is not in Alltime.
+    months = [2, 3, 5, 6, 7, 8, 9]
+    rows = [wine(vinotek.Period(2018, m), "Gevrey-Chambertin", "Sigurd", f"W{m}") for m in months]
+    repaired, notes = vinotek.undo_fill_handle(rows)
+    assert {w.period for w in repaired} == {vinotek.Period(2018, 2)}
+    assert "month" in notes[0]
+
+
+def test_a_genuine_annual_evening_is_left_alone():
+    """The club really does hold a 'Top of the pops' every January.
+
+    Eight years of it, eight wines each — the years step by one, but no year is
+    carried by a single row, so it is a series of evenings and not a drag.
+    """
+    rows = [
+        wine(vinotek.Period(2015 + y, 1), "Top of the pops", "Tore", f"Wine {y}-{i}")
+        for y in range(8)
+        for i in range(8)
+    ]
+    repaired, notes = vinotek.undo_fill_handle(rows)
+    assert notes == []
+    assert len({w.period for w in repaired}) == 8
+
+
+def test_two_holes_are_too_sparse_to_call_a_drag():
+    months = [2, 4, 6, 8]  # a hole between each — not a dense run
+    rows = [wine(vinotek.Period(2018, m), "Something", "Sigurd", f"W{m}") for m in months]
+    _, notes = vinotek.undo_fill_handle(rows)
+    assert notes == []
+
+
+def test_a_short_run_is_left_alone():
+    # Three consecutive months could easily be three real evenings.
+    rows = [wine(vinotek.Period(2018, m), "Bring your own", "Sigurd", f"W{m}") for m in (2, 3, 4)]
+    _, notes = vinotek.undo_fill_handle(rows)
+    assert notes == []
+
+
+def test_different_places_are_different_evenings():
+    rows = [
+        wine(vinotek.Period(2018, m), "Bring your own", f"Host{m}", f"W{m}")
+        for m in range(2, 8)
+    ]
+    _, notes = vinotek.undo_fill_handle(rows)
+    assert notes == [], "same theme at six different homes is six evenings"
+
+
+def test_repair_never_moves_a_row_later():
+    rows = [
+        wine(vinotek.Period(2019 + i, 7), "Riesling", "Andy", f"R{i}") for i in range(8)
+    ]
+    repaired, _ = vinotek.undo_fill_handle(rows)
+    assert all(w.period.year <= 2019 + i for i, w in enumerate(repaired))
+
+
+def test_the_scores_are_never_touched():
+    rows = [
+        wine(vinotek.Period(2022, 1), f"Top of the pops {2021 + i}", "Tore", f"W{i}")
+        for i in range(10)
+    ]
+    repaired, _ = vinotek.undo_fill_handle(rows)
+    assert [w.scores for w in repaired] == [w.scores for w in rows]
+    assert [w.name for w in repaired] == [w.name for w in rows]
