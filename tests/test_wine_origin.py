@@ -249,3 +249,22 @@ def test_the_researched_seed_file_is_valid():
         assert entry.get("name"), entry
         assert entry.get("source"), f"every claim needs a source: {entry['name']}"
         assert entry.get("country") or entry.get("grape") or entry.get("note"), entry
+
+
+def test_ribeiro_is_not_ribeira_sacra():
+    """Two different Galician DOs, one letter apart, with different grapes."""
+    assert derive("Dominio do Bibei Ribeiro").region == "Ribeiro"
+    assert derive("Algueira Ribeira Sacra").region == "Ribeira Sacra"
+    assert derive("Some Ribeiro Blanco").grape == "Treixadura"
+
+
+@pytest.mark.parametrize(
+    "name,grape",
+    [
+        ("Coto de Imaz Reserva Blanco Viura", "Viura"),
+        ("Some Macabeo 2019", "Viura"),        # the same grape under its Catalan name
+        ("Calvente Moscatel Seco 2020", "Muscat"),
+    ],
+)
+def test_the_spanish_whites_the_sheet_names(name, grape):
+    assert derive(name).grape == grape

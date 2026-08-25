@@ -482,6 +482,331 @@
       "grape": "Grenache",
       "note": "Contino (CVNE) in Rioja Alavesa; the rosado is Garnacha-led with Graciano",
       "source": "https://cvne.com/en/wines/contino-rose/"
+    },
+    {
+      "name": "Ch. Calon Segur 1996",
+      "country": "France",
+      "region": "Saint-Estèphe",
+      "grape": "Cabernet Sauvignon",
+      "note": "Third growth in Saint-Estèphe; 53% Cabernet Sauvignon in the vineyard",
+      "source": "https://en.wikipedia.org/wiki/Ch%C3%A2teau_Calon-S%C3%A9gur"
+    },
+    {
+      "name": "Ch. Talbot 1997",
+      "country": "France",
+      "region": "Saint-Julien",
+      "grape": "Cabernet Sauvignon",
+      "note": "Fourth growth in Saint-Julien; 67% Cabernet Sauvignon over 107 ha",
+      "source": "https://en.wikipedia.org/wiki/Ch%C3%A2teau_Talbot"
+    },
+    {
+      "name": "La Gravette de Certan 2018",
+      "country": "France",
+      "region": "Pomerol",
+      "grape": "Merlot",
+      "note": "Second wine of Vieux Château Certan, from vines under 25 years; ~85% Merlot",
+      "source": "http://www.vieuxchateaucertan.com/en/great-wines-pomerol/la-gravette-de-certan.html"
+    },
+    {
+      "name": "Clos d'Oratorie 2011",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Clos de l'Oratoire, Saint-Émilion grand cru classé, 80% Merlot; sheet spells it 'Oratorie'",
+      "source": "https://www.neipperg.com/en/discover/clos-de-l-oratoire.html"
+    },
+    {
+      "name": "La Fleur Morange 2004",
+      "country": "France",
+      "region": "Saint-Émilion",
+      "grape": "Merlot",
+      "note": "Saint-Émilion grand cru classé at Saint-Pey-d'Armens; Merlot-dominant",
+      "source": "https://en.wikipedia.org/wiki/Saint-%C3%89milion_AOC"
+    },
+    {
+      "name": "Casa Ferreirinha Quinta da Leda 2014",
+      "country": "Portugal",
+      "region": "Douro",
+      "grape": "Touriga Franca",
+      "note": "Douro DOC field blend led by Touriga Franca, with Touriga Nacional, Tinto Cão, Tinta Roriz",
+      "source": "https://www.libertywines.co.uk/our-portfolio/CF306-quinta-da-leda-douro-tinto"
+    },
+    {
+      "name": "Casa Ferreirinha Quinta de Leda 2009",
+      "country": "Portugal",
+      "region": "Douro",
+      "grape": "Touriga Franca",
+      "note": "Same wine as the 2014; the sheet writes 'de Leda' one year and 'da Leda' the next",
+      "source": "https://www.libertywines.co.uk/our-portfolio/CF306-quinta-da-leda-douro-tinto"
+    },
+    {
+      "name": "Niepoort Charme 2019",
+      "country": "Portugal",
+      "region": "Douro",
+      "grape": "Touriga Nacional blend",
+      "note": "Douro DOC from 70-100 year-old Vale de Mendiz vines; Tinta Roriz and Touriga Franca led, a field blend",
+      "source": "https://www.decantalo.com/us/en/niepoort-charme.html"
+    },
+    {
+      "name": "Seabra Xisto Cru",
+      "country": "Portugal",
+      "region": "Douro",
+      "grape": "Touriga Nacional blend",
+      "note": "Luís Seabra's Cru series: an old-vine Douro field blend, Touriga Nacional / Tinta Roriz / Touriga Franca / Alicante Bouschet",
+      "source": "https://vinhosabeber.pt/a-door-into-douro-luis-seabras-xisto-cru/"
+    },
+    {
+      "name": "Sidonio de Sousa Reserva Tinto 2012",
+      "country": "Portugal",
+      "region": "Bairrada",
+      "grape": "Baga",
+      "note": "Among the oldest Baga vines in Bairrada; clay-limestone at Ancas",
+      "source": "https://wineanorak.com/2024/10/28/the-wines-of-sidonio-de-sousa-bairrada/"
+    },
+    {
+      "name": "M. Chapoutier Les Varonnieres Rouge 2012",
+      "country": "France",
+      "region": "Crozes-Hermitage",
+      "grape": "Syrah",
+      "note": "Chapoutier's oldest Crozes vines (60+ years) off the west flank of the Hermitage hill",
+      "source": "https://www.chapoutier.com/en/shop/les-varonniers/2017/152"
+    },
+    {
+      "name": "Dom. d'Andézon 2021",
+      "country": "France",
+      "region": "Côtes du Rhône",
+      "grape": "Syrah",
+      "note": "95% Syrah from 30-60 year-old vines at Estézargues; unusually Syrah-led for a Côtes du Rhône",
+      "source": "https://www.europeancellars.com/wine/domaine-dandezon/"
+    },
+    {
+      "name": "Ch. d'Esclans Whispering Angel 2023",
+      "country": "France",
+      "region": "Côtes de Provence",
+      "grape": "Grenache",
+      "note": "Grenache-led with Cinsault and Rolle (Vermentino)",
+      "source": "https://www.esclans.com/en-us/our-wines/whispering-angel"
+    },
+    {
+      "name": "Ch. de Ségriès 2022",
+      "country": "France",
+      "grape": "Grenache blend",
+      "note": "Estate in Lirac, but it also bottles a Côtes du Rhône — the name alone doesn't say which, so no region recorded",
+      "source": "https://www.chateaudesegries.fr/castle.html"
+    },
+    {
+      "name": "BRUMA DEL ESTRECHO Paraje Marín 2022",
+      "country": "Spain",
+      "region": "Jumilla",
+      "grape": "Mourvèdre",
+      "note": "100% Monastrell from the Marín valley, aged in 1960s concrete",
+      "source": "https://brumadelestrecho.com/en/marin/"
+    },
+    {
+      "name": "Comando G Rozas 2022",
+      "country": "Spain",
+      "region": "Sierra de Gredos",
+      "grape": "Grenache",
+      "note": "100% Garnacha, 90 year-old granite vineyards at Las Rozas de Puerto Real; DO Vinos de Madrid",
+      "source": "https://www.zachys.com/wine/vinos-de-madrid-sierra-de-gredos-rozas-comando-g-2022-750ml-552785.html"
+    },
+    {
+      "name": "Dominio do Bibei Lalume 2020",
+      "country": "Spain",
+      "region": "Ribeiro",
+      "grape": "Treixadura",
+      "note": "Treixadura-led with Albariño and Godello; the producer is Ribeira Sacra but Lalume is its Ribeiro white",
+      "source": "https://www.libertywines.co.uk/our-portfolio/DB304-lalume-white-ribeiro"
+    },
+    {
+      "name": "Calvente Guindalera Mountain Wine 2020",
+      "country": "Spain",
+      "region": "Granada",
+      "grape": "Muscat",
+      "note": "Dry Moscatel de Alejandría from 700-1000 m at Jete; DOP Vino de Calidad de Granada",
+      "source": "https://www.dopvinosdegranada.es/calvente?lang=en"
+    },
+    {
+      "name": "Tondonia Reserva 2005",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "R. López de Heredia, Rioja Alta; ~75% Tempranillo with Garnacha, Graciano and Mazuelo, six years in barrel",
+      "source": "https://www.wine.com/product/r-lopez-de-heredia-rioja-vina-tondonia-reserva-2008/644103"
+    },
+    {
+      "name": "Izadi reserva 2009",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Tempranillo",
+      "note": "100% Tempranillo from Rioja Alavesa limestone, 15 months in oak",
+      "source": "https://izadi.com/en/wines-doca-rioja"
+    },
+    {
+      "name": "Coto de Imaz Reserva Blanco",
+      "country": "Spain",
+      "region": "Rioja",
+      "grape": "Viura",
+      "note": "El Coto's Rioja white: 93% Viura with Sauvignon Blanc and Verdejo",
+      "source": "https://www.libertywines.co.uk/our-portfolio/EC201-rioja-blanco"
+    },
+    {
+      "name": "Condado de Haza 2012",
+      "country": "Spain",
+      "region": "Ribera del Duero",
+      "grape": "Tempranillo",
+      "note": "Alejandro Fernández's Haza estate; 100% Tempranillo, 15 months American oak",
+      "source": "https://www.astorwines.com/item/48016"
+    },
+    {
+      "name": "San Román 2012",
+      "country": "Spain",
+      "region": "Toro",
+      "grape": "Tempranillo",
+      "note": "Mariano García's Toro estate; single-varietal Tinta de Toro, the local Tempranillo",
+      "source": "https://www.bodegasanroman.com/en/wines/"
+    },
+    {
+      "name": "Dom. des Tourelles Rouge 2004",
+      "country": "Lebanon",
+      "region": "Bekaa Valley",
+      "note": "Founded 1868, dry-farmed at 1050 m; 40% Syrah, 40% Cabernet Sauvignon, 15% Cinsault, 5% Carignan — no single grape leads, so none recorded",
+      "source": "https://www.europeancellars.com/producer/domaine-des-tourelles/"
+    },
+    {
+      "name": "Carrascal Bodegas Weinert 1",
+      "country": "Argentina",
+      "region": "Mendoza",
+      "grape": "Malbec",
+      "note": "Weinert's Carrascal line from Luján de Cuyo and Maipú; Malbec-led, 18 months in large French casks",
+      "source": "https://www.firthandco.com/carrascal-malbec-weinert-mendoza-argentina/"
+    },
+    {
+      "name": "Carrascal Bodegas Weinert 2",
+      "country": "Argentina",
+      "region": "Mendoza",
+      "grape": "Malbec",
+      "note": "The second glass of the same wine in a blind duplo tasting",
+      "source": "https://www.firthandco.com/carrascal-malbec-weinert-mendoza-argentina/"
+    },
+    {
+      "name": "Colome Lote Especial 2013 (Morten)",
+      "country": "Argentina",
+      "region": "Salta",
+      "grape": "Malbec",
+      "note": "Upper Calchaquí Valley, among the world's highest Malbec vineyards",
+      "source": "https://www.wine-searcher.com/find/colome+spc+malbec+calchaqui+valley+salta+argentina"
+    },
+    {
+      "name": "Gaia Thalassitis",
+      "country": "Greece",
+      "region": "Santorini",
+      "grape": "Assyrtiko",
+      "note": "100% Assyrtiko from ~80 year-old ungrafted vines at Episkopi, Akrotiri and Pyrgos",
+      "source": "https://gaiawines.gr/en/thalassitis-en/"
+    },
+    {
+      "name": "Chamonix Rouge 2013",
+      "country": "South Africa",
+      "region": "Franschhoek",
+      "grape": "Bordeaux blend",
+      "note": "Cape Chamonix, high on the eastern Franschhoek slopes; Cabernet Sauvignon / Merlot / Malbec / Petit Verdot",
+      "source": "https://www.wineanorak.com/chamonix.htm"
+    },
+    {
+      "name": "Rupert & Rothschild Baron Edmond 2017",
+      "country": "South Africa",
+      "region": "Franschhoek",
+      "grape": "Merlot",
+      "note": "70% Merlot with 15% each Cabernet Sauvignon and Cabernet Franc; 18 months in French barriques",
+      "source": "https://rupert-rothschildvignerons.com/wines/baron-edmond/"
+    },
+    {
+      "name": "Marjan Simcic",
+      "country": "Slovenia",
+      "region": "Goriška Brda",
+      "note": "Brda, immediately east of Italy's Collio; the sheet records no cuvée, and the estate makes many varieties, so no grape",
+      "source": "https://www.simcic.si/en"
+    },
+    {
+      "name": "Vajra Rosabella 2022",
+      "country": "Italy",
+      "region": "Piemonte",
+      "grape": "Nebbiolo",
+      "note": "G.D. Vajra's rosato: Nebbiolo by saignée with Barbera and Dolcetto, from Barolo, La Morra, Novello and Serralunga",
+      "source": "https://www.wine.com/product/gd-vajra-rosabella-rosato-2022/1306249"
+    },
+    {
+      "name": "Bernhard Huber Malterdinger Weisswein 2020",
+      "country": "Germany",
+      "region": "Baden",
+      "grape": "Chardonnay",
+      "note": "Malterdingen in Baden; Chardonnay-led (about 70%) with Weissburgunder",
+      "source": "https://www.justerinis.com/stories/wines-of-the-season/what-were-drinking-malterdinger-weiss-bernhard-huber-2020"
+    },
+    {
+      "name": "Simpsons Flintfields Blanc de Noirs 2020",
+      "country": "England",
+      "region": "Kent",
+      "grape": "Pinot Noir",
+      "note": "100% estate Pinot Noir on the chalk of the North Downs at Barham; 27 months on lees",
+      "source": "https://simpsonswine.com/products/flint-fields-blanc-de-noirs-2020"
+    },
+    {
+      "name": "Bread & Butter PN",
+      "country": "USA",
+      "region": "California",
+      "grape": "Pinot Noir",
+      "note": "Bottled to the broad California appellation rather than a single AVA",
+      "source": "https://breadandbutterwines.com/california-pinot-noir/"
+    },
+    {
+      "name": "J. De Telmont Grand Couronnement BdB",
+      "country": "France",
+      "region": "Champagne",
+      "grape": "Chardonnay",
+      "note": "Grand cru blanc de blancs, 100% Chardonnay, from Damery in the Vallée de la Marne",
+      "source": "https://www.wine.com/product/champagne-de-telmont-grand-couronnement-grand-cru-blanc-de-blancs-brut-2002/294173"
+    },
+    {
+      "name": "A.D. Coutelas Grand Millesime Brut",
+      "country": "France",
+      "region": "Champagne",
+      "grape": "Champagne blend",
+      "note": "Grower estate at Dizy in the Marne valley; 50% Chardonnay, 50% Pinot Noir, eight years on lees",
+      "source": "https://www.cellartracker.com/wine.asp?iWine=4228927"
+    },
+    {
+      "name": "Pedregosa Res Blanc De Millesime Brut",
+      "country": "Spain",
+      "region": "Cava",
+      "grape": "Grenache",
+      "note": "Castelo de Pedregosa at Sant Sadurní d'Anoia; a blanc de noirs — 65% Garnacha Negra with Xarel·lo and Macabeu, 20 months on lees",
+      "source": "https://shop.castelodepedregosa.com/en/products/Blanc-de-Millesime-p574942798"
+    },
+    {
+      "name": "Ch. du Coing de St. Fiacre 2015",
+      "country": "France",
+      "region": "Muscadet",
+      "grape": "Melon de Bourgogne",
+      "note": "Muscadet Sèvre-et-Maine sur lie; the Chéreau family has made wine at Saint-Fiacre since 1421",
+      "source": "https://vgc.fr/en/vins/chateau-du-coing-de-saint-fiacre-muscadet-sevre-et-maine-sur-lie/"
+    },
+    {
+      "name": "Ch. Du Pape Sifrein 2014",
+      "country": "France",
+      "region": "Châteauneuf-du-Pape",
+      "grape": "Grenache blend",
+      "note": "Read as Châteauneuf-du-Pape from Domaine de Saint-Siffrein — the sheet abbreviates the appellation and drops a letter from the name; 65% Grenache with Syrah, Mourvèdre and Cinsault",
+      "source": "https://www.thewinecellarinsider.com/rhone-wines-cote-rotie-hermitage-chateauneuf-du-pape/chateauneuf-du-pape-wine-producer-profiles/domaine-de-saint-siffrein-chateauneuf-du-pape-wine/"
+    },
+    {
+      "name": "Matt Taylor Cuvée Kaela 2017",
+      "country": "USA",
+      "region": "Sonoma Coast",
+      "grape": "Pinot Noir",
+      "note": "Komorebi Vineyard, West Sonoma Coast; whole-cluster native-yeast Pinot Noir, 29 months sur lie",
+      "source": "https://flaskfinewines.com/products/matt-taylor-wines-pinot-noir-cuvee-kaela-komorebi-vineyard-sonoma-coast-2017"
     }
   ]
 }
