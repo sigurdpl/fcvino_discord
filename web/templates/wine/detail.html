@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ wine['name'] }} · FC Vino{% endblock %}
+{% block body %}
+
+<p class="crumb"><a href="/wine">← the cellar</a></p>
+<h1>{{ wine['name'] }}</h1>
+
+<p class="muted origin">
+  {%- set bits = [wine['region'], wine['country']] | select | list -%}
+  {{ bits | join(', ') or 'Origin unknown' }}
+  {%- if wine['grape'] %} · {{ wine['grape'] }}{% endif %}
+  {%- if wine['vintage'] and wine['vintage']|string not in wine['name'] %} · {{ wine['vintage'] }}{% endif %}
+  {%- if wine['price_nok'] %} · {{ wine['price_nok'] }} kr{% endif %}
+</p>
+
+{% if summary and summary['ratings'] %}
+<div class="score-hero">
+  <div class="big">{{ summary['average'] | score }}</div>
+  <div class="muted">
+    from {{ summary['ratings'] }} of us · low {{ summary['lowest'] }} · high {{ summary['highest'] }}
+  </div>
+</div>
+{% else %}
+<p class="muted">Nobody has scored this one.</p>
+{% endif %}
+
+{% if wine['tasting'] %}
+<p class="muted">
+  Poured at <a href="/wine/tastings/{{ wine['tasting'] }}">{{ wine['theme'] or 'a tasting' }}</a>,
+  {{ fmt_month(wine['year'], wine['month']) }}{% if wine['location'] %}, at {{ wine['location'] }}'s{% endif %}
+  {%- if wine['brought_by'] %} · brought by {{ wine['brought_by'] }}{% endif %}
+</p>
+{% endif %}
+
+{% if ratings %}
+<h2>What everyone said</h2>
+<table class="rows">
+  <thead><tr><th>Who</th><th class="num">Score</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for r in ratings %}
+    <tr class="{{ 'me' if member_name == r['name'] }}">
+      <td>{{ r['name'] }}</td>
+      <td class="num strong">{{ r['score'] }}</td>
+      <td class="muted">{{ r['notes'] or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if elsewhere %}
+<h2>The same bottle, other evenings</h2>
+<p class="muted">The club does not always agree with itself.</p>
+<table class="rows">
+  <thead><tr><th>When</th><th>Evening</th><th class="num">Score</th><th class="num">Ratings</th></tr></thead>
+  <tbody>
+  {% for e in elsewhere %}
+    <tr>
+      <td><a href="/wine/{{ e['id'] }}">{{ fmt_month(e['year'], e['month']) }}</a></td>
+      <td class="muted">{{ e['theme'] or '—' }}</td>
+      <td class="num strong">{{ e['average'] | score }}</td>
+      <td class="num muted">{{ e['ratings'] }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

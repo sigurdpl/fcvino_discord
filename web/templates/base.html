@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FC Vino{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🍷</text></svg>">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/wine">FC&nbsp;Vino</a>
+  <nav>
+    <a href="/wine" class="{{ 'on' if request.url.path.startswith('/wine') and '/tastings' not in request.url.path and '/boards' not in request.url.path }}">Cellar</a>
+    <a href="/wine/boards" class="{{ 'on' if '/boards' in request.url.path }}">Boards</a>
+    <a href="/wine/tastings" class="{{ 'on' if '/tastings' in request.url.path }}">Tastings</a>
+    <a href="/trips" class="{{ 'on' if request.url.path.startswith('/trips') }}">Trips</a>
+    <a href="/football" class="{{ 'on' if request.url.path.startswith('/football') }}">Football</a>
+  </nav>
+  <span class="who">
+    {% if member_name %}{{ member_name }}{% endif %}
+    <a href="/logout" title="Sign out">⏻</a>
+  </span>
+</header>
+
+{% if request.url.path != '/login' and not member_name %}
+<form class="whoami" method="post" action="/whoami">
+  <label for="member_id">You haven't said who you are —</label>
+  <select name="member_id" id="member_id">
+    {% for m in members or [] %}<option value="{{ m['id'] }}">{{ m['name'] }}</option>{% endfor %}
+  </select>
+  <button type="submit">that's me</button>
+</form>
+{% endif %}
+
+<main>
+{% block body %}{% endblock %}
+</main>
+
+<footer>
+  <span>FC Vino · nine friends, two obsessions</span>
+</footer>
+</body>
+</html>

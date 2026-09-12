@@ -1,12 +1,51 @@
-# FC Vino Discord bot
+# FC Vino
 
-One Python bot for a nine-person server about football and wine.
+A Discord bot and a web app for a nine-person club about football and wine, over
+one SQLite database.
 
 - 🍷 **Cellar** — log bottles, rate them out of 100, keep tasting notes, see group averages and best-value finds
 - ⚽ **Football** — Premier League and Champions League fixtures, results and tables, plus a nudge before kickoff
 - 🎯 **Predictions** — exact-score picks across a Premier League matchweek, scored automatically, season leaderboard
 
-Everything is slash commands, and everything lives in one process. Adding a feature means adding a cog, not another bot.
+In Discord everything is slash commands. The web app (`web/`) covers the same
+three subjects with room to breathe: **searching 1016 wines and 7456 ratings**,
+a page per bottle with everyone's notes, and the trips archive. The two halves
+share `bot/db.py`, `bot/wine_stats.py`, `bot/trip_stats.py` and
+`bot/wine_origin.py` — only the presentation differs, so a number can never
+disagree between them.
+
+---
+
+## The web app
+
+```bash
+pip install -r requirements.txt
+# set WEB_PASSWORD in .env — one passphrase, shared with the club
+uvicorn web.app:app --reload
+```
+
+Then <http://localhost:8000>. It can run at the same time as the bot: the
+database is in WAL mode, so a second process reads happily while the bot writes,
+and the search index notices when something has changed underneath it.
+
+**Search** is the point of it. Type into the box and results come back as you
+type, over the wine's name, its country, region, grape and vintage, and the
+evening it was poured at. Queries are folded the same way the index is, via
+`bot/wine_origin.fold`, so `sor afrika` finds **Sør Afrika**, `cote rotie` finds
+**Côte-Rôtie** and `spatburgunder` finds **Spätburgunder**. Quote a phrase to
+keep it whole. Filters narrow by country, region, grape, who brought it, tasting
+year, vintage and minimum score.
+
+A wine's page shows the group average, every member's score and notes, and — when
+the same bottle turned up at more than one evening — what it scored each time.
+Ch. Musar 2005 is the example to look at: 92.3 at its own evening in 2020, 85.0
+in January 2014, and 65.8 in 2013.
+
+**Signing in** is one club password, then you pick your name. That is honestly
+all it is: anyone with the password can pick any name, which is fine for nine
+friends on one laptop and not fine the day this gets a public address. When it
+does, `wine_members.discord_id` is already there for Discord OAuth to bind a
+login to a real person.
 
 ---
 
@@ -306,13 +345,18 @@ Two decisions worth knowing about:
 ```bash
 pip install -r requirements-dev.txt
 pytest
-ruff check bot scripts tests
+ruff check bot web scripts tests
 ```
 
 No network and no token: the football API and Discord are both stubbed. Alongside the unit tests for scoring, wine maths and config validation, `tests/test_loops.py` drives the real background-loop bodies through a whole matchweek — fixtures mirrored, reminder posted once, predictions scored, wrap-up published — which is the cheapest way to catch a regression in the parts that only ever run unattended.
 
 ## Notes
 
+- **Neither half is online unless you have started it.** `python -m bot` for
+  Discord, `uvicorn web.app:app` for the site. The web app is `localhost` only
+  for now — putting it somewhere the club can reach means picking a host, and
+  that is the point at which the shared password should become Discord OAuth and
+  `https_only=True` in `web/app.py`.
 - **The bot is only online while `python -m bot` is running.** Close the terminal or let the Mac sleep and it goes offline; reminders in that window are missed rather than fired late. When that gets annoying, the same code moves to a Raspberry Pi or a small VPS — the only change is where `.env` lives.
 - `.env` and `data/` are gitignored. If a token ever does land in a commit, hit **Reset Token** in the Developer Portal. Rotating the token is the fix; rewriting history is not.
 - Command names are English. If you'd rather have `/vin`, `/fotball` and `/tips`, it's a rename in one place per cog.

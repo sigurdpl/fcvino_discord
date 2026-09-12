@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Trips · FC Vino{% endblock %}
+{% block body %}
+<h1>{{ trips | length }} away trips</h1>
+<p class="muted">
+  <strong>{{ countries | length }}</strong> countries ·
+  <strong>{{ matches | length }}</strong> matches ·
+  <strong>{{ goals }}</strong> goals
+  {%- if goals_per_game %} ({{ goals_per_game | score }} a game){% endif %}
+  {%- if grounds %} · <strong>{{ grounds | length }}</strong> grounds{% endif %}
+  {%- if streak %} · {{ streak[0] }}–{{ streak[1] }} without missing a year{% endif %}
+</p>
+
+<table class="rows">
+  <thead><tr><th class="num">Year</th><th>Where</th><th>Matches</th></tr></thead>
+  <tbody>
+  {% for t in trips %}
+    <tr>
+      <td class="num"><a href="/trips/{{ t['year'] }}">{{ t['year'] }}</a></td>
+      <td>{{ t['country'] }}{% if t['city'] %}, {{ t['city'] }}{% endif %}</td>
+      <td class="muted">
+        {% for m in matches_by_trip.get(t['id'], []) %}
+          {{ m['home'] }} {{ m['home_goals'] if m['home_goals'] is not none else '–' }}–{{ m['away_goals'] if m['away_goals'] is not none else '–' }} {{ m['away'] }}{{ ' · ' if not loop.last }}
+        {% else %}
+          <em>no match recorded</em>
+        {% endfor %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="cols">
+  <div>
+    <h2>Countries</h2>
+    <ul class="tally">
+      {% for name, n in countries %}<li>{{ name }} <span class="muted">{{ n }}</span></li>{% endfor %}
+    </ul>
+  </div>
+  <div>
+    <h2>Clubs seen</h2>
+    <ul class="tally">
+      {% for name, n in clubs[:12] %}<li>{{ name }} <span class="muted">{{ n }}</span></li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

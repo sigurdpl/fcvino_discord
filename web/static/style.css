@@ -1,0 +1,175 @@
+/* FC Vino — one stylesheet, mobile first.
+   Burgundy and paper, matching the bot's embed colour (0x722F37). */
+
+:root {
+  --wine: #722f37;
+  --wine-soft: #9b4a54;
+  --ink: #1d1a18;
+  --muted: #6d6460;
+  --paper: #faf7f4;
+  --card: #ffffff;
+  --line: #e6ded8;
+  --good: #2f6b4f;
+  --bad: #9b3b30;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wine: #c9818b;
+    --wine-soft: #b06a75;
+    --ink: #ece7e4;
+    --muted: #9d938e;
+    --paper: #17140f;
+    --card: #211d19;
+    --line: #352e29;
+    --good: #6fbf95;
+    --bad: #e08a7e;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+main {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; color: var(--wine); }
+a { color: var(--wine); text-decoration-color: var(--line); text-underline-offset: 2px; }
+a:hover { text-decoration-color: currentColor; }
+
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.strong { font-weight: 650; }
+.nowrap { white-space: nowrap; }
+.crumb { margin: 0 0 .5rem; font-size: .9rem; }
+.mark { color: var(--wine-soft); font-weight: 700; cursor: help; }
+
+.error {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+  border-left: 3px solid var(--bad);
+  padding: .6rem .8rem; border-radius: 4px;
+}
+
+/* -- top bar ------------------------------------------------------------ */
+
+.bar {
+  display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+  padding: .7rem 1rem;
+  background: var(--wine); color: #fff;
+  position: sticky; top: 0; z-index: 10;
+}
+.bar a { color: #fff; text-decoration: none; opacity: .85; }
+.bar a:hover, .bar a.on { opacity: 1; }
+.bar a.on { box-shadow: inset 0 -2px 0 #fff; }
+.brand { font-weight: 700; letter-spacing: .02em; }
+.bar nav { display: flex; gap: .9rem; flex-wrap: wrap; }
+.who { margin-left: auto; font-size: .85rem; opacity: .9; display: flex; gap: .5rem; }
+
+.whoami {
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  max-width: 62rem; margin: .75rem auto 0; padding: .6rem 1rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: .9rem;
+}
+
+footer {
+  max-width: 62rem; margin: 0 auto; padding: 1rem;
+  border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem;
+}
+
+/* -- forms -------------------------------------------------------------- */
+
+input, select, button {
+  font: inherit; color: inherit;
+  background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: .45rem .6rem;
+}
+input:focus, select:focus { outline: 2px solid var(--wine-soft); outline-offset: 1px; }
+button {
+  background: var(--wine); color: #fff; border-color: transparent;
+  cursor: pointer; font-weight: 600;
+}
+button:hover { background: var(--wine-soft); }
+
+.searchbox { position: relative; display: flex; align-items: center; }
+.searchbox input {
+  width: 100%; font-size: 1.05rem; padding: .7rem .9rem;
+  border-radius: var(--radius);
+}
+.htmx-indicator { position: absolute; right: .8rem; opacity: 0; color: var(--muted); }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+
+.search { margin: 1rem 0; }
+.filters { margin-top: .6rem; font-size: .9rem; }
+.filters summary { cursor: pointer; color: var(--muted); }
+.filters .grid {
+  display: grid; gap: .6rem; margin: .7rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.filters label { display: flex; flex-direction: column; gap: .2rem; color: var(--muted); }
+.filters select, .filters input { width: 100%; }
+.pill {
+  background: var(--wine); color: #fff; border-radius: 999px;
+  padding: 0 .45rem; font-size: .72rem; vertical-align: 1px;
+}
+.clear { font-size: .85rem; }
+.inline { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 1rem; }
+
+.count { color: var(--muted); font-size: .9rem; margin: 1rem 0 .4rem; }
+
+/* -- tables ------------------------------------------------------------- */
+
+.rows { width: 100%; border-collapse: collapse; font-size: .94rem; }
+.rows th {
+  text-align: left; font-weight: 600; font-size: .78rem; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted);
+  padding: .4rem .5rem; border-bottom: 1px solid var(--line);
+}
+.rows td { padding: .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rows tbody tr:hover { background: color-mix(in srgb, var(--wine) 5%, transparent); }
+.rows .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rows th.num { text-align: right; }
+.rows tr.me { background: color-mix(in srgb, var(--wine) 9%, transparent); }
+.board td, .board th { padding: .35rem .5rem; }
+
+/* A table wider than the screen scrolls itself rather than the page. */
+main > table, .cols table { display: block; overflow-x: auto; }
+@media (min-width: 40rem) { main > table, .cols table { display: table; } }
+
+/* -- pieces ------------------------------------------------------------- */
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1.5rem;
+}
+.login { max-width: 22rem; margin: 3rem auto; text-align: center; }
+.login h1 { font-size: 1.8rem; }
+.login form { display: flex; flex-direction: column; gap: .6rem; margin-top: 1.2rem; }
+
+.score-hero { display: flex; align-items: baseline; gap: .8rem; margin: 1rem 0; flex-wrap: wrap; }
+.score-hero .big {
+  font-size: 2.6rem; font-weight: 700; color: var(--wine);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.origin { margin-top: 0; }
+
+.cols { display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
+@media (min-width: 46rem) { .cols { grid-template-columns: 1fr 1fr; } }
+
+.tally { list-style: none; padding: 0; margin: 0; font-size: .92rem; }
+.tally li {
+  display: flex; justify-content: space-between;
+  padding: .28rem 0; border-bottom: 1px solid var(--line);
+}
