@@ -1,0 +1,34 @@
+{# The results table alone, so HTMX can swap it in as you type. #}
+<p class="count">
+  {% if total_hits %}
+    {{ total_hits }} wine{{ '' if total_hits == 1 else 's' }}
+    {%- if total_hits > limit %}, showing the first {{ limit }}{% endif %}
+  {% elif q %}
+    Nothing matches <strong>{{ q }}</strong>.
+  {% else %}
+    Nothing matches those filters.
+  {% endif %}
+</p>
+
+{% if hits %}
+<table class="rows">
+  <thead>
+    <tr><th>Wine</th><th>Origin</th><th class="num">Score</th><th class="num">Ratings</th><th>Tasted</th></tr>
+  </thead>
+  <tbody>
+  {% for hit in hits %}
+    {% set w = hit.row %}
+    <tr>
+      <td><a href="/wine/{{ w.id }}">{{ w.name }}</a></td>
+      <td class="muted">
+        {%- set bits = [w.region, w.country] | select | list -%}
+        {{ bits | join(', ') }}{% if w.grape %} · {{ w.grape }}{% endif %}
+      </td>
+      <td class="num strong">{{ w.average | score }}</td>
+      <td class="num muted">{{ w.ratings }}</td>
+      <td class="muted">{% if w.year %}{{ w.year }}{% if w.theme %} · {{ w.theme }}{% endif %}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

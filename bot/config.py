@@ -7,6 +7,7 @@ five frames deep in the gateway code.
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -47,6 +48,8 @@ class Config:
     reminder_competitions: tuple[str, ...]
     prediction_competition: str
     log_level: str
+    web_password: str | None
+    web_secret: str
 
     @property
     def has_football(self) -> bool:
@@ -70,8 +73,14 @@ def _int(name: str, default: int) -> int:
         raise ConfigError(f"{name} must be a whole number, got {raw!r}.") from exc
 
 
-def load(*, require_discord: bool = True) -> Config:
-    """Read .env plus the process environment into a validated Config."""
+def load(*, require_discord: bool = True, require_web: bool = False) -> Config:
+    """Read .env plus the process environment into a validated Config.
+
+    `require_discord` and `require_web` say which half of the app is starting:
+    the bot needs a Discord token, the web app needs a club password, and the
+    scripts need neither. Everything else is shared, which is the point — both
+    halves must agree on which database file they are talking to.
+    """
     load_dotenv(REPO_ROOT / ".env")
 
     if require_discord:
@@ -123,6 +132,18 @@ def load(*, require_discord: bool = True) -> Config:
             f"  -> pick from: {', '.join(sorted(FREE_COMPETITIONS))}"
         )
 
+    web_password = (os.getenv("WEB_PASSWORD") or "").strip() or None
+    if require_web and not web_password:
+        raise ConfigError(
+            "WEB_PASSWORD is not set in your .env file.\n"
+            "  -> pick a passphrase and share it with the club: WEB_PASSWORD=some words"
+        )
+
+    # A generated secret is fine for a localhost app — it only means everyone is
+    # signed out when the server restarts. Set WEB_SESSION_SECRET to keep
+    # sessions across restarts, and do set it once this is hosted anywhere.
+    web_secret = (os.getenv("WEB_SESSION_SECRET") or "").strip() or secrets.token_hex(32)
+
     return Config(
         discord_token=token,
         guild_id=guild_id,
@@ -133,4 +154,6 @@ def load(*, require_discord: bool = True) -> Config:
         reminder_competitions=reminder_comps,
         prediction_competition=prediction_comp,
         log_level=(os.getenv("LOG_LEVEL") or "INFO").strip().upper(),
+        web_password=web_password,
+        web_secret=web_secret,
     )

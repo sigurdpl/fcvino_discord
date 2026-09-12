@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Cellar · FC Vino{% endblock %}
+{% block body %}
+
+<h1>The cellar</h1>
+{% if totals %}
+<p class="muted">
+  <strong>{{ totals['wines'] }}</strong> bottles ·
+  <strong>{{ totals['ratings'] }}</strong> ratings ·
+  <strong>{{ totals['tastings'] }}</strong> tastings ·
+  {{ totals['first_year'] }}–{{ totals['last_year'] }}
+</p>
+{% endif %}
+
+<form class="search" hx-get="/wine/results" hx-target="#results" hx-trigger="input changed delay:150ms from:find input, change from:find select"
+      hx-push-url="false" hx-indicator="#spin">
+  <div class="searchbox">
+    <input type="search" name="q" value="{{ q }}" autofocus autocomplete="off"
+           placeholder="barolo · sør afrika · &quot;vino nobile&quot; · chablis premier cru">
+    <span id="spin" class="htmx-indicator">…</span>
+  </div>
+
+  <details class="filters" {% if not filters.empty %}open{% endif %}>
+    <summary>Filters{% if not filters.empty %} <span class="pill">on</span>{% endif %}</summary>
+    <div class="grid">
+      <label>Country
+        <select name="country">
+          <option value="">any</option>
+          {% for name, n in countries %}
+          <option value="{{ name }}" {% if filters.country == name %}selected{% endif %}>{{ name }} ({{ n }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Region
+        <select name="region">
+          <option value="">any</option>
+          {% for name, n in regions %}
+          <option value="{{ name }}" {% if filters.region == name %}selected{% endif %}>{{ name }} ({{ n }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Grape
+        <select name="grape">
+          <option value="">any</option>
+          {% for name, n in grapes %}
+          <option value="{{ name }}" {% if filters.grape == name %}selected{% endif %}>{{ name }} ({{ n }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Brought by
+        <select name="member">
+          <option value="">anyone</option>
+          {% for name, n in brought %}
+          <option value="{{ name }}" {% if filters.member == name %}selected{% endif %}>{{ name }} ({{ n }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Tasted from
+        <input type="number" name="year_from" value="{{ filters.year_from or '' }}" placeholder="2013" min="2000" max="2100">
+      </label>
+      <label>to
+        <input type="number" name="year_to" value="{{ filters.year_to or '' }}" placeholder="2026" min="2000" max="2100">
+      </label>
+      <label>Vintage from
+        <input type="number" name="vintage_from" value="{{ filters.vintage_from or '' }}" placeholder="1969" min="1800" max="2100">
+      </label>
+      <label>to
+        <input type="number" name="vintage_to" value="{{ filters.vintage_to or '' }}" placeholder="2024" min="1800" max="2100">
+      </label>
+      <label>Scored at least
+        <input type="number" name="min_score" value="{{ filters.min_score or '' }}" placeholder="85" min="1" max="100" step="0.5">
+      </label>
+    </div>
+    <a class="clear" href="/wine">Clear all</a>
+  </details>
+</form>
+
+<div id="results">
+  {% include "wine/_results.html" %}
+</div>
+{% endblock %}

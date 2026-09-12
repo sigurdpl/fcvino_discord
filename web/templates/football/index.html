@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Football · FC Vino{% endblock %}
+{% block body %}
+<h1>{{ competition_name }}</h1>
+
+<form method="get" class="inline">
+  <label for="competition">Competition</label>
+  <select name="competition" id="competition" onchange="this.form.submit()">
+    {% for c, name in competitions.items() %}
+    <option value="{{ c }}" {% if c == code %}selected{% endif %}>{{ name }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+{% for table in tables %}
+  {% if table.group %}<h2>{{ table.group | replace('_', ' ') | title }}</h2>{% endif %}
+  <table class="rows board">
+    <thead><tr><th class="num">#</th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">GF</th><th class="num">GA</th><th class="num">GD</th><th class="num">Pts</th></tr></thead>
+    <tbody>
+    {% for row in table.table %}
+      <tr>
+        <td class="num muted">{{ row.position }}</td>
+        <td>{{ row.team.shortName or row.team.name }}</td>
+        <td class="num muted">{{ row.playedGames }}</td>
+        <td class="num muted">{{ row.won }}</td>
+        <td class="num muted">{{ row.draw }}</td>
+        <td class="num muted">{{ row.lost }}</td>
+        <td class="num muted">{{ row.goalsFor }}</td>
+        <td class="num muted">{{ row.goalsAgainst }}</td>
+        <td class="num muted">{{ row.goalDifference }}</td>
+        <td class="num strong">{{ row.points }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endfor %}
+
+<div class="cols">
+  <div>
+    <h2>Coming up</h2>
+    {% if fixtures %}
+    <table class="rows">
+      <tbody>
+      {% for m in fixtures %}
+        <tr>
+          <td class="muted nowrap">{{ m['kickoff_utc'][:16] | replace('T', ' ') }}</td>
+          <td>{{ m['home'] }} v {{ m['away'] }}</td>
+          <td class="muted">{{ m['competition'] }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Nothing in the local mirror. The bot fills it in while it runs.</p>
+    {% endif %}
+  </div>
+  <div>
+    <h2>Recent results</h2>
+    {% if results %}
+    <table class="rows">
+      <tbody>
+      {% for m in results %}
+        <tr>
+          <td class="muted nowrap">{{ m['kickoff_utc'][:10] }}</td>
+          <td>{{ m['home'] }} {{ m['home_goals'] }}–{{ m['away_goals'] }} {{ m['away'] }}</td>
+          <td class="muted">{{ m['competition'] }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No finished matches in the mirror yet.</p>
+    {% endif %}
+  </div>
+</div>
+<p class="muted small">
+  Fixtures and results come from the local mirror the bot keeps — no API call.
+  The table is fetched live and cached for half an hour.
+</p>
+{% endblock %}
