@@ -1,4 +1,5 @@
-{# The results table alone, so HTMX can swap it in as you type. #}
+{# The results only — HTMX swaps this into #results as you type.
+   Must never extend base.html, or a whole page lands inside the card. #}
 <p class="count">
   {% if total_hits %}
     {{ total_hits }} wine{{ '' if total_hits == 1 else 's' }}
@@ -11,6 +12,7 @@
 </p>
 
 {% if hits %}
+<div class="scroll">
 <table class="rows">
   <thead>
     <tr><th>Wine</th><th>Origin</th><th class="num">Score</th><th class="num">Ratings</th><th>Tasted</th></tr>
@@ -25,10 +27,11 @@
         {{ bits | join(', ') }}{% if w.grape %} · {{ w.grape }}{% endif %}
       </td>
       <td class="num strong">{{ w.average | score }}</td>
-      <td class="num muted">{{ w.ratings }}</td>
+      <td class="num faint">{{ w.ratings }}</td>
       <td class="muted">{% if w.year %}{{ w.year }}{% if w.theme %} · {{ w.theme }}{% endif %}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}

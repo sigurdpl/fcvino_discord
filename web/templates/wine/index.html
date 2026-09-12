@@ -2,21 +2,13 @@
 {% block title %}Cellar · FC Vino{% endblock %}
 {% block body %}
 
-<h1>The cellar</h1>
-{% if totals %}
-<p class="muted">
-  <strong>{{ totals['wines'] }}</strong> bottles ·
-  <strong>{{ totals['ratings'] }}</strong> ratings ·
-  <strong>{{ totals['tastings'] }}</strong> tastings ·
-  {{ totals['first_year'] }}–{{ totals['last_year'] }}
-</p>
-{% endif %}
-
-<form class="search" hx-get="/wine/results" hx-target="#results" hx-trigger="input changed delay:150ms from:find input, change from:find select"
+<form class="card search" hx-get="/wine/results" hx-target="#results"
+      hx-trigger="input changed delay:150ms from:find input, change from:find select"
       hx-push-url="false" hx-indicator="#spin">
   <div class="searchbox">
+    <span class="glass">🔍</span>
     <input type="search" name="q" value="{{ q }}" autofocus autocomplete="off"
-           placeholder="barolo · sør afrika · &quot;vino nobile&quot; · chablis premier cru">
+           placeholder="barolo · sør afrika · &quot;vino nobile&quot; · chablis">
     <span id="spin" class="htmx-indicator">…</span>
   </div>
 
@@ -75,7 +67,7 @@
   </details>
 </form>
 
-<div id="results">
+<section class="card" id="results">
   {% include "wine/_results.html" %}
-</div>
+</section>
 {% endblock %}

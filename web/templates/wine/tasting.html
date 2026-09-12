@@ -1,29 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ tasting['theme'] or 'Tasting' }} · FC Vino{% endblock %}
 {% block body %}
-<p class="crumb"><a href="/wine/tastings">← all tastings</a></p>
-<h1>{{ tasting['theme'] or 'A tasting' }}</h1>
-<p class="muted">
-  {{ fmt_month(tasting['year'], tasting['month']) }}
-  {%- if tasting['location'] %} · at {{ tasting['location'] }}'s{% endif %}
-  {%- if tasting['host'] %} · chosen by {{ tasting['host'] }}{% endif %}
-</p>
+<section class="card">
+  <p class="crumb"><a href="/wine/tastings">← all tastings</a></p>
+  <h1>{{ tasting['theme'] or 'A tasting' }}</h1>
+  <p class="muted" style="margin-bottom:0">
+    {{ fmt_month(tasting['year'], tasting['month']) }}
+    {%- if tasting['location'] %} · at {{ tasting['location'] }}'s{% endif %}
+    {%- if tasting['host'] %} · chosen by {{ tasting['host'] }}{% endif %}
+  </p>
+</section>
 
-<table class="rows">
-  <thead><tr><th class="num">#</th><th>Wine</th><th>Origin</th><th class="num">Score</th><th class="num">Ratings</th></tr></thead>
-  <tbody>
-  {% for w in wines %}
-    <tr>
-      <td class="num muted">{{ loop.index }}</td>
-      <td><a href="/wine/{{ w['id'] }}">{{ w['name'] }}</a></td>
-      <td class="muted">
-        {%- set bits = [w['region'], w['country']] | select | list -%}
-        {{ bits | join(', ') }}{% if w['grape'] %} · {{ w['grape'] }}{% endif %}
-      </td>
-      <td class="num strong">{{ w['average'] | score }}</td>
-      <td class="num muted">{{ w['ratings'] }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<section class="card">
+  <div class="scroll">
+  <table class="rows">
+    <thead><tr><th class="num">#</th><th>Wine</th><th>Origin</th><th class="num">Score</th><th class="num">Ratings</th></tr></thead>
+    <tbody>
+    {% for w in wines %}
+      <tr>
+        <td class="num faint">{{ loop.index }}</td>
+        <td><a href="/wine/{{ w['id'] }}">{{ w['name'] }}</a></td>
+        <td class="muted">
+          {%- set bits = [w['region'], w['country']] | select | list -%}
+          {{ bits | join(', ') }}{% if w['grape'] %} · {{ w['grape'] }}{% endif %}
+        </td>
+        <td class="num strong">{{ w['average'] | score }}</td>
+        <td class="num faint">{{ w['ratings'] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
 {% endblock %}

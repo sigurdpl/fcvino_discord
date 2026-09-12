@@ -1,44 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Boards · FC Vino{% endblock %}
 {% block body %}
-<h1>How we rate things</h1>
-<p class="muted">
-  An average is the mean of every individual rating, not the mean of the wines'
-  averages — a bottle nine of us scored counts for more than one three people
-  were around for. A row needs {{ minimum }} bottles to appear.
-</p>
 
-{% if placed %}
-<p class="muted small">
-  Placed: {% for c in placed %}{{ c.field }} {{ (c.share * 100) | round | int }}%{{ ' · ' if not loop.last }}{% endfor %}
-</p>
-{% endif %}
+<section class="card">
+  <h1>How we rate things</h1>
+  <p class="muted small" style="margin-bottom:0">
+    An average is the mean of every individual rating, not the mean of the wines'
+    averages — a bottle nine of us scored counts for more than one three people
+    were around for. A row needs {{ minimum }} bottles to appear.
+    {% if placed %}<br>
+    Placed: {% for c in placed %}{{ c.field }} {{ (c.share * 100) | round | int }}%{{ ' · ' if not loop.last }}{% endfor %}
+    {% endif %}
+  </p>
+</section>
 
 {% for field, table in tables.items() %}
-<h2>{{ table.title }}</h2>
-{% if table.rows %}
-<table class="rows board">
-  <thead><tr><th class="num">#</th><th>{{ field | capitalize }}</th><th class="num">Bottles</th><th class="num">Evenings</th><th class="num">Average</th></tr></thead>
-  <tbody>
-  {% for t in table.rows %}
-    <tr>
-      <td class="num muted">{{ loop.index }}</td>
-      <td><a href="/wine?{{ field }}={{ t.name | urlencode }}">{{ t.name }}</a>{% if t.one_evening %} <span class="mark" title="every bottle from one evening">*</span>{% endif %}</td>
-      <td class="num muted">{{ t.wines }}</td>
-      <td class="num muted">{{ t.tastings }}</td>
-      <td class="num strong">{{ t.average | score }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-<p class="muted small">
-  {{ table.rows | length }} with {{ minimum }}+ bottles.
-  {% if table.rows | selectattr('one_evening') | list %}
-  <strong>*</strong> every bottle poured on one night — as much a verdict on that evening as on the {{ field }}.
+<section class="card">
+  <h2>{{ table.title }}</h2>
+  {% if table.rows %}
+  <div class="scroll">
+  <table class="rows board">
+    <thead><tr><th class="num">#</th><th>{{ field | capitalize }}</th><th class="num">Bottles</th><th class="num">Evenings</th><th class="num">Average</th></tr></thead>
+    <tbody>
+    {% for t in table.rows %}
+      <tr>
+        <td class="num faint">{{ loop.index }}</td>
+        <td><a href="/wine?{{ field }}={{ t.name | urlencode }}">{{ t.name }}</a>{% if t.one_evening %} <span class="mark" title="every bottle from one evening">*</span>{% endif %}</td>
+        <td class="num faint">{{ t.wines }}</td>
+        <td class="num faint">{{ t.tastings }}</td>
+        <td class="num strong">{{ t.average | score }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">
+    {{ table.rows | length }} with {{ minimum }}+ bottles.
+    {% if table.rows | selectattr('one_evening') | list %}
+    <strong>*</strong> every bottle poured on one night — as much a verdict on that evening as on the {{ field }}.
+    {% endif %}
+  </p>
+  {% else %}
+  <p class="muted">Nothing qualifies yet.</p>
   {% endif %}
-</p>
-{% else %}
-<p class="muted">Nothing qualifies yet.</p>
-{% endif %}
+</section>
 {% endfor %}
 {% endblock %}

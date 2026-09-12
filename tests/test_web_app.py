@@ -300,3 +300,53 @@ def test_a_rating_added_behind_the_app_moves_the_average(signed_in, cellar):
     page = signed_in.get("/wine/2").text
     assert "85.0" in page, "80, 82, 78 and 100"
     assert "Lennart" in page
+
+
+# -- the club-page chrome ---------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/wine", "/trips", "/football", "/wine/boards"])
+def test_the_group_header_carries_the_same_numbers_everywhere(signed_in, path):
+    """Like a group's member count: the same on every page, not just the one
+    route that happened to query for it."""
+    page = signed_in.get(path).text
+    assert "3 bottles" in page and "9 ratings" in page
+
+
+def test_the_login_page_has_no_group_header(signed_in, client):
+    client.get("/logout")
+    page = client.get("/login").text
+    assert "bottles ·" not in page, "nothing about the club before you are let in"
+
+
+def test_a_wine_with_notes_reads_as_a_discussion(signed_in):
+    page = signed_in.get("/wine/3").text
+    assert "What everyone said" in page
+    assert 'class="said"' in page, "the note is drawn as a bubble"
+    assert 'class="notes "' in page or 'class="notes"' in page
+
+
+def test_a_wine_without_notes_collapses(signed_in, cellar):
+    """7456 imported ratings carry no note at all — the sheet never had them.
+
+    A thread with nothing said in it is a tall list of numbers, so the page must
+    tighten up rather than leave nine empty bubbles.
+    """
+    cellar.execute("UPDATE wine_ratings SET notes = NULL WHERE wine_id = 3")
+    page = signed_in.get("/wine/3").text
+    assert "What everyone scored it" in page
+    assert 'class="said"' not in page
+    assert "notes tight" in page
+
+
+def test_every_rater_gets_an_avatar(signed_in):
+    page = signed_in.get("/wine/3").text
+    for who, letter in (("Andy", "A"), ("Morten", "M"), ("Tore", "T")):
+        assert who in page
+        assert f'>{letter}</span>' in page
+
+
+def test_avatar_colours_are_inline_and_stable(signed_in):
+    from web.avatars import colour
+    page = signed_in.get("/wine/3").text
+    assert f"background: {colour('Morten')}" in page

@@ -1,19 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Tastings · FC Vino{% endblock %}
 {% block body %}
-<h1>{{ tastings | length }} tastings</h1>
-<table class="rows">
-  <thead><tr><th>When</th><th>Theme</th><th>Where</th><th class="num">Wines</th><th class="num">Average</th></tr></thead>
-  <tbody>
-  {% for t in tastings %}
-    <tr>
-      <td><a href="/wine/tastings/{{ t['id'] }}">{{ fmt_month(t['year'], t['month']) }}</a></td>
-      <td>{{ t['theme'] or '—' }}</td>
-      <td class="muted">{{ t['location'] or '—' }}</td>
-      <td class="num muted">{{ t['wines'] }}</td>
-      <td class="num strong">{{ t['average'] | score }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<section class="card">
+  <h1>{{ tastings | length }} tastings</h1>
+  <div class="scroll">
+  <table class="rows">
+    <thead><tr><th>When</th><th>Theme</th><th>Where</th><th class="num">Wines</th><th class="num">Average</th></tr></thead>
+    <tbody>
+    {% for t in tastings %}
+      <tr>
+        <td class="nowrap"><a href="/wine/tastings/{{ t['id'] }}">{{ fmt_month(t['year'], t['month']) }}</a></td>
+        <td>{{ t['theme'] or '—' }}</td>
+        <td class="muted">
+          {% if t['location'] %}
+          <span class="avatar sm" style="background: {{ avatar_colour(t['location']) }}">{{ initials(t['location']) }}</span>
+          {{ t['location'] }}
+          {% else %}—{% endif %}
+        </td>
+        <td class="num faint">{{ t['wines'] }}</td>
+        <td class="num strong">{{ t['average'] | score }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
 {% endblock %}
