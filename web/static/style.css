@@ -4,47 +4,64 @@
    the club's headline numbers, a tab strip, circular initial avatars, and the
    tasting notes drawn as a discussion.
 
-   The accent stays FC Vino's burgundy (#722f37, the same colour the bot uses on
-   its embeds) rather than borrowing a social network's blue — the layout is what
-   carries the family resemblance, and the colour is what keeps this the club's
-   own site. */
+   The colours are the club's own kit, read off the cover photo: the navy of the
+   shirt, the red of the dot over the i in the wordmark, and the brass of the
+   cellar wall behind it. Navy carries the chrome, red is kept for the things you
+   can click, and the photo itself is the cover. */
 
 :root {
-  --page: #f0f0ee;
+  --page: #f1efec;
   --card: #ffffff;
-  --line: #e2ddd8;
-  --ink: #1c1a19;
-  --muted: #6d6460;
-  --faint: #9a918c;
+  --line: #e3ded8;
+  --ink: #16202f;
+  --muted: #5d6675;
+  --faint: #8f96a1;
 
-  --wine: #722f37;
-  --wine-soft: #9b4a54;
-  --wine-wash: #f6eff0;
+  --navy: #1b2a42;
+  --navy-soft: #2c4160;
+  --navy-wash: #eef1f6;
+  /* Navy as type rather than as a surface: it has to flip in dark, where
+     the shirt's navy would disappear into the card. */
+  --navy-ink: #1b2a42;
 
-  --chip: #eceae7;
+  --red: #c8392b;
+  --red-soft: #a72f23;
+  --red-wash: #fbeeec;
+
+  --brass: #8a7b64;
+
+  --chip: #edeae6;
   --good: #2f6b4f;
-  --bad: #9b3b30;
+  --bad: #b3402f;
 
   --radius: 10px;
   --radius-lg: 14px;
-  --shadow: 0 1px 2px rgba(28, 26, 25, .09), 0 0 1px rgba(28, 26, 25, .06);
+  --shadow: 0 1px 2px rgba(22, 32, 47, .10), 0 0 1px rgba(22, 32, 47, .07);
   --col: 46rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --page: #131211;
-    --card: #1e1c1a;
-    --line: #322d29;
-    --ink: #ece7e4;
-    --muted: #a39892;
-    --faint: #7d736e;
+    --page: #101722;
+    --card: #18202e;
+    --line: #2a3547;
+    --ink: #e6eaf0;
+    --muted: #9aa4b4;
+    --faint: #78828f;
 
-    --wine: #cf8892;
-    --wine-soft: #b8707b;
-    --wine-wash: #2a1f21;
+    /* Raised from the light navy so the bar still lifts off the page. */
+    --navy: #24354f;
+    --navy-soft: #354866;
+    --navy-wash: #1d2635;
+    --navy-ink: #cdd8ea;
 
-    --chip: #2a2623;
+    --red: #e8695c;
+    --red-soft: #d4574a;
+    --red-wash: #2a1a18;
+
+    --brass: #b39d7d;
+
+    --chip: #232d3d;
     --good: #6fbf95;
     --bad: #e08a7e;
 
@@ -72,7 +89,7 @@ main {
   gap: .9rem;
 }
 
-a { color: var(--wine); text-decoration: none; }
+a { color: var(--red); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 h1 { font-size: 1.35rem; margin: 0 0 .3rem; letter-spacing: -.015em; }
@@ -85,10 +102,10 @@ h2:not(:first-child) { margin-top: 1.4rem; }
 .strong { font-weight: 650; }
 .nowrap { white-space: nowrap; }
 .crumb { margin: 0 0 .6rem; font-size: .88rem; }
-.mark { color: var(--wine-soft); font-weight: 700; cursor: help; }
+.mark { color: var(--brass); font-weight: 700; cursor: help; }
 
 .error {
-  background: var(--wine-wash);
+  background: var(--red-wash);
   border-left: 3px solid var(--bad);
   padding: .6rem .8rem;
   border-radius: 6px;
@@ -108,29 +125,37 @@ h2:not(:first-child) { margin-top: 1.4rem; }
 
 /* -- the slim bar across the top --------------------------------------- */
 
+/* The one surface that doesn't follow --card: it is the navy of the shirt, in
+   both themes, so the wordmark sits on the same colour it does on the jersey. */
 .bar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: .8rem;
   padding: .55rem 1rem;
-  background: var(--card);
-  border-bottom: 1px solid var(--line);
+  background: var(--navy);
+  border-bottom: 1px solid transparent;
 }
 .brand {
   font-weight: 750; letter-spacing: -.02em; font-size: 1.02rem;
-  color: var(--wine);
+  color: #fff;
 }
 .bar .who { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
-.bar .who a { color: var(--muted); font-size: 1.05rem; }
+.bar .who a { color: rgba(255, 255, 255, .72); font-size: 1.05rem; }
+.bar .who a:hover { color: #fff; }
 
 /* -- the group header -------------------------------------------------- */
 
+/* The group's own cover photo — the shirt in front of the cellar wall. The
+   scrim keeps the group name below it readable at any crop, and the gradient
+   underneath is what shows if the image ever goes missing. Positioned at 55% so
+   the wordmark stays in frame at both heights. */
 .cover {
-  height: 108px;
+  height: 132px;
   background:
-    radial-gradient(120% 150% at 12% -20%, var(--wine-soft) 0%, transparent 55%),
-    linear-gradient(105deg, var(--wine) 0%, #4a1f26 100%);
+    linear-gradient(180deg, rgba(15, 26, 43, .10) 0%, rgba(15, 26, 43, .62) 100%),
+    url("/static/cover.jpg") center 55% / cover no-repeat,
+    linear-gradient(105deg, var(--navy) 0%, #0f1a2b 100%);
 }
-@media (min-width: 40rem) { .cover { height: 148px; } }
+@media (min-width: 40rem) { .cover { height: 190px; } }
 
 .group-head { padding: .9rem 1.1rem .35rem; }
 .group-head h1 { font-size: 1.45rem; margin: 0; }
@@ -150,7 +175,7 @@ h2:not(:first-child) { margin-top: 1.4rem; }
   border-radius: 6px 6px 0 0;
 }
 .tabs a:hover { background: var(--chip); text-decoration: none; }
-.tabs a.on { color: var(--wine); border-bottom-color: var(--wine); }
+.tabs a.on { color: var(--navy-ink); border-bottom-color: var(--red); }
 
 /* -- forms -------------------------------------------------------------- */
 
@@ -161,13 +186,13 @@ input, select, button {
   border-radius: 999px;
   padding: .45rem .8rem;
 }
-input:focus, select:focus { outline: 2px solid var(--wine-soft); outline-offset: 1px; }
+input:focus, select:focus { outline: 2px solid var(--navy-soft); outline-offset: 1px; }
 
 button {
-  background: var(--wine); color: #fff; border-color: transparent;
+  background: var(--red); color: #fff; border-color: transparent;
   cursor: pointer; font-weight: 600;
 }
-button:hover { background: var(--wine-soft); }
+button:hover { background: var(--red-soft); }
 button.quiet { background: var(--chip); color: var(--ink); }
 button.quiet:hover { background: var(--line); }
 
@@ -194,7 +219,7 @@ button.quiet:hover { background: var(--line); }
 .filters label { display: flex; flex-direction: column; gap: .2rem; color: var(--muted); }
 .filters select, .filters input { width: 100%; border-radius: 8px; }
 .pill {
-  background: var(--wine); color: #fff; border-radius: 999px;
+  background: var(--red); color: #fff; border-radius: 999px;
   padding: .05rem .45rem; font-size: .7rem; vertical-align: 1px;
 }
 .clear { font-size: .85rem; }
@@ -217,7 +242,7 @@ button.quiet:hover { background: var(--line); }
 }
 .rows td { padding: .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .rows tbody tr:last-child td { border-bottom: none; }
-.rows tbody tr:hover { background: var(--wine-wash); }
+.rows tbody tr:hover { background: var(--navy-wash); }
 .rows .num, .rows th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .board td, .board th { padding: .32rem .5rem; }
 
@@ -248,22 +273,22 @@ button.quiet:hover { background: var(--line); }
   background: var(--chip); border-radius: 0 var(--radius) var(--radius) var(--radius);
   padding: .4rem .65rem; margin-top: .25rem; font-size: .93rem;
 }
-.note.me .said { background: var(--wine-wash); }
+.note.me .said { background: var(--red-wash); }
 .note .score {
   margin-left: auto; font-variant-numeric: tabular-nums;
-  font-weight: 700; color: var(--wine);
+  font-weight: 700; color: var(--navy-ink);
 }
 
 /* -- pieces -------------------------------------------------------------- */
 
-.login { max-width: 21rem; margin: 3.5rem auto; text-align: center; }
+.login { max-width: 26rem; margin: 3.5rem auto; text-align: center; }
 .login h1 { font-size: 1.7rem; }
 .login form { display: flex; flex-direction: column; gap: .6rem; margin-top: 1.2rem; }
 .login input { border-radius: 8px; text-align: center; }
 
 .score-hero { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
 .score-hero .big {
-  font-size: 2.5rem; font-weight: 750; color: var(--wine);
+  font-size: 2.5rem; font-weight: 750; color: var(--navy-ink);
   font-variant-numeric: tabular-nums; line-height: 1;
 }
 
