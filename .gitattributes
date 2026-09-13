@@ -1,0 +1,8 @@
+# Images live in Git LFS — see the setup note in README.md. SVG is deliberately
+# absent: it is text, and it should keep diffing like text.
+*.jpg  filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.png  filter=lfs diff=lfs merge=lfs -text
+*.gif  filter=lfs diff=lfs merge=lfs -text
+*.webp filter=lfs diff=lfs merge=lfs -text
+*.ico  filter=lfs diff=lfs merge=lfs -text

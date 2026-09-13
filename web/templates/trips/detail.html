@@ -1,28 +1,35 @@
 {% extends "base.html" %}
 {% block title %}{{ trip['year'] }} · {{ trip['country'] }} · FC Vino{% endblock %}
 {% block body %}
-<p class="crumb"><a href="/trips">← every trip</a></p>
-<h1>{{ trip['year'] }} · {{ trip['country'] }}{% if trip['city'] %}, {{ trip['city'] }}{% endif %}</h1>
-{% if trip['date_from'] %}
-<p class="muted">{{ trip['date_from'] }}{% if trip['date_to'] %} – {{ trip['date_to'] }}{% endif %}</p>
-{% endif %}
-{% if trip['notes'] %}<p>{{ trip['notes'] }}</p>{% endif %}
 
-{% if matches %}
-<table class="rows">
-  <thead><tr><th>Date</th><th>Match</th><th class="num">Result</th><th>Ground</th></tr></thead>
-  <tbody>
-  {% for m in matches %}
-    <tr>
-      <td class="muted">{{ m['match_date'] or '—' }}</td>
-      <td>{{ m['home'] }} v {{ m['away'] }}{% if m['competition'] %} <span class="muted">· {{ m['competition'] }}</span>{% endif %}</td>
-      <td class="num strong">{{ m['home_goals'] if m['home_goals'] is not none else '–' }}–{{ m['away_goals'] if m['away_goals'] is not none else '–' }}</td>
-      <td class="muted">{{ m['stadium'] or '—' }}{% if m['attendance'] %} · {{ '{:,}'.format(m['attendance']).replace(',', ' ') }}{% endif %}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">No match recorded for this trip.</p>
-{% endif %}
+<section class="card">
+  <p class="crumb"><a href="/trips">← every trip</a></p>
+  <h1>{{ trip['year'] }} · {{ trip['country'] }}{% if trip['city'] %}, {{ trip['city'] }}{% endif %}</h1>
+  {% if trip['date_from'] %}
+  <p class="muted small">{{ trip['date_from'] }}{% if trip['date_to'] %} – {{ trip['date_to'] }}{% endif %}</p>
+  {% endif %}
+  {% if trip['notes'] %}<p style="margin-bottom:0">{{ trip['notes'] }}</p>{% endif %}
+</section>
+
+<section class="card">
+  {% if matches %}
+  <div class="scroll">
+  <table class="rows">
+    <thead><tr><th>Date</th><th>Match</th><th class="num">Result</th><th>Ground</th></tr></thead>
+    <tbody>
+    {% for m in matches %}
+      <tr>
+        <td class="muted nowrap">{{ m['match_date'] or '—' }}</td>
+        <td>{{ m['home'] }} v {{ m['away'] }}{% if m['competition'] %} <span class="faint">· {{ m['competition'] }}</span>{% endif %}</td>
+        <td class="num strong nowrap">{{ m['home_goals'] if m['home_goals'] is not none else '–' }}–{{ m['away_goals'] if m['away_goals'] is not none else '–' }}</td>
+        <td class="muted">{{ m['stadium'] or '—' }}{% if m['attendance'] %} <span class="faint">· {{ '{:,}'.format(m['attendance']).replace(',', ' ') }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">No match recorded for this trip.</p>
+  {% endif %}
+</section>
 {% endblock %}

@@ -67,6 +67,12 @@ Only you can do this part — it needs your Discord account and Manage Server on
 
 ## 2. Run it
 
+The repo keeps its images in [Git LFS](https://git-lfs.com). Install it once —
+`brew install git-lfs && git lfs install` — **before** cloning. If you have already
+cloned without it, `git lfs pull` swaps the pointer files for the real ones; the
+giveaway is `web/static/cover.jpg` arriving as a line of text and the site's cover
+header rendering broken.
+
 Pick either environment — conda is what this machine uses.
 
 **conda**
