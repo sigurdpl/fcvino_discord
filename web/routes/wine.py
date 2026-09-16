@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BeforeValidator
 
 from bot import wine_stats
 
@@ -13,6 +16,16 @@ from ..search import Filters
 router = APIRouter(prefix="/wine")
 
 BOARD_TITLES = {"country": "By country", "region": "By region", "grape": "By grape"}
+
+# An untouched <input type="number"> still submits, as `year_from=`, and every
+# one of the filter fields is usually untouched — so the search form's own
+# request would be rejected as unparseable before it reached the index. Blank
+# means "no filter" here exactly as it does for the dropdowns; anything else is
+# still refused rather than quietly ignored, so a real typo is not read as "all
+# of them".
+_blank_is_nothing = BeforeValidator(lambda value: None if value == "" else value)
+BlankableInt = Annotated[int | None, _blank_is_nothing]
+BlankableFloat = Annotated[float | None, _blank_is_nothing]
 
 
 def _filters(
@@ -51,11 +64,11 @@ async def index(
     region: str = "",
     grape: str = "",
     member: str = "",
-    year_from: int | None = None,
-    year_to: int | None = None,
-    vintage_from: int | None = None,
-    vintage_to: int | None = None,
-    min_score: float | None = None,
+    year_from: BlankableInt = None,
+    year_to: BlankableInt = None,
+    vintage_from: BlankableInt = None,
+    vintage_to: BlankableInt = None,
+    min_score: BlankableFloat = None,
     limit: int = Query(60, ge=1, le=500),
 ):
     filters = _filters(country, region, grape, member, year_from, year_to,
@@ -87,11 +100,11 @@ async def results(
     region: str = "",
     grape: str = "",
     member: str = "",
-    year_from: int | None = None,
-    year_to: int | None = None,
-    vintage_from: int | None = None,
-    vintage_to: int | None = None,
-    min_score: float | None = None,
+    year_from: BlankableInt = None,
+    year_to: BlankableInt = None,
+    vintage_from: BlankableInt = None,
+    vintage_to: BlankableInt = None,
+    min_score: BlankableFloat = None,
     limit: int = Query(60, ge=1, le=500),
 ):
     """The results table on its own, for HTMX to swap in as you type."""
