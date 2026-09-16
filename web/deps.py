@@ -14,6 +14,7 @@ from bot.config import Config
 from bot.db import Database
 
 from . import access, auth
+from .avatars import colour, initials
 from .queries import IndexCache
 from .search import Index
 
@@ -39,6 +40,8 @@ def fmt_month(year: int | None, month: int | None) -> str:
 
 templates.env.filters["score"] = fmt_score
 templates.env.globals["fmt_month"] = fmt_month
+templates.env.globals["initials"] = initials
+templates.env.globals["avatar_colour"] = colour
 
 
 class LoginRequired(Exception):
@@ -100,9 +103,12 @@ def redirect_to_login(request: Request, next_url: str) -> RedirectResponse:
 def page(request: Request, template: str, *, status_code: int = 200, **context):
     """Render a template with the things every page's chrome needs."""
     member = auth.current_member(request)
-    # The "who are you?" prompt lives in the base template, so every page needs
-    # the member list whether it asked for one or not.
+    # The chrome in base.html needs these on every page whether the route asked
+    # for them or not: the member list for the "who are you?" prompt, and the
+    # club's headline numbers for the group header — which should read the same
+    # everywhere, the way a group's member count does.
     context.setdefault("members", _members(request))
+    context.setdefault("totals", _totals(request))
     return templates.TemplateResponse(
         request,
         template,
@@ -120,6 +126,14 @@ def _members(request: Request) -> list:
     if db is None:
         return []
     return db.query("SELECT id, name FROM wine_members ORDER BY name")
+
+
+def _totals(request: Request):
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        return None
+    from .queries import cellar_totals
+    return cellar_totals(db)
 
 
 def safe_path(url: str | None, host: str | None = None, fallback: str = "/wine") -> str:
