@@ -152,6 +152,79 @@ def test_signing_out_clears_the_session(signed_in):
     assert signed_in.get("/wine", follow_redirects=False).status_code == 303
 
 
+# -- Cloudflare Access as the front door ------------------------------------
+
+ACCESS_HEADER = {"Cf-Access-Authenticated-User-Email": "Morten@Example.COM"}
+
+
+@pytest.fixture()
+def behind_access(cellar, tmp_path):
+    """The app as it runs in production: Cloudflare vouches, we believe it."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={"morten@example.com": "Morten", "nobody@example.com": "Nigel"},
+    )
+    with TestClient(create_app(cfg)) as c:
+        yield c
+
+
+def test_a_vouched_email_needs_no_password(behind_access):
+    assert behind_access.get("/wine", headers=ACCESS_HEADER).status_code == 200
+
+
+def test_a_vouched_email_is_already_a_name(behind_access):
+    """No password page and no dropdown: the address says who you are."""
+    page = behind_access.get("/wine", headers=ACCESS_HEADER).text
+    assert "Morten" in page
+    assert "haven't said who you are" not in page
+
+
+def test_the_header_alone_is_not_enough(client):
+    """Off the tunnel the header is just a header anyone could have typed."""
+    response = client.get("/wine", headers=ACCESS_HEADER, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_behind_access_a_bare_request_still_meets_the_gate(behind_access):
+    assert behind_access.get("/wine", follow_redirects=False).status_code == 303
+
+
+def test_an_address_mapped_to_nobody_we_know_is_signed_in_but_unnamed(behind_access):
+    """A typo in the .env mapping leaves you anonymous, not somebody else."""
+    page = behind_access.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": "nobody@example.com"}
+    ).text
+    assert "haven't said who you are" in page
+
+
+def test_an_unmapped_address_still_gets_in(behind_access):
+    """Access already decided they belong; the name is the only open question."""
+    response = behind_access.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": "guest@example.com"}
+    )
+    assert response.status_code == 200
+    assert "haven't said who you are" in response.text
+
+
+def test_signing_out_goes_through_cloudflare(behind_access):
+    """Clearing our session alone would be a revolving door — Access still knows."""
+    response = behind_access.get(
+        "/logout", headers=ACCESS_HEADER, follow_redirects=False
+    )
+    assert response.headers["location"] == "/cdn-cgi/access/logout"
+
+
+def test_signing_out_locally_still_goes_to_the_login_page(signed_in):
+    response = signed_in.get("/logout", follow_redirects=False)
+    assert response.headers["location"] == "/login"
+
+
 # -- who you are ------------------------------------------------------------
 
 

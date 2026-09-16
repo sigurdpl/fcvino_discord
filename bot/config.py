@@ -50,6 +50,8 @@ class Config:
     log_level: str
     web_password: str | None
     web_secret: str
+    access_trusted: bool
+    access_members: dict[str, str]
 
     @property
     def has_football(self) -> bool:
@@ -61,6 +63,28 @@ def _require(name: str, hint: str) -> str:
     if not value:
         raise ConfigError(f"{name} is not set in your .env file.\n  -> {hint}")
     return value
+
+
+def _flag(name: str) -> bool:
+    """A switch that is off unless it is turned on in so many words."""
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _email_map(name: str) -> dict[str, str]:
+    """`alice@example.com=Alice, bob@example.com=Bob` into {email: name}.
+
+    Lives in the environment rather than the database because the repository is
+    public and these are nine real people's addresses. A malformed pair is
+    skipped rather than fatal: a typo in one address should not take the whole
+    site down at start-up.
+    """
+    pairs: dict[str, str] = {}
+    for chunk in (os.getenv(name) or "").split(","):
+        email, _, member = chunk.partition("=")
+        email, member = email.strip().lower(), member.strip()
+        if email and member:
+            pairs[email] = member
+    return pairs
 
 
 def _int(name: str, default: int) -> int:
@@ -132,11 +156,18 @@ def load(*, require_discord: bool = True, require_web: bool = False) -> Config:
             f"  -> pick from: {', '.join(sorted(FREE_COMPETITIONS))}"
         )
 
+    # Set FCVINO_ACCESS once the app sits behind Cloudflare Access, which then
+    # does the signing in. See web/access.py for why this is opt-in and not
+    # simply "trust the header if it is there".
+    access_trusted = _flag("FCVINO_ACCESS")
+    access_members = _email_map("FCVINO_ACCESS_MEMBERS")
+
     web_password = (os.getenv("WEB_PASSWORD") or "").strip() or None
-    if require_web and not web_password:
+    if require_web and not web_password and not access_trusted:
         raise ConfigError(
             "WEB_PASSWORD is not set in your .env file.\n"
-            "  -> pick a passphrase and share it with the club: WEB_PASSWORD=some words"
+            "  -> pick a passphrase and share it with the club: WEB_PASSWORD=some words\n"
+            "  -> or set FCVINO_ACCESS=1 if Cloudflare Access is the front door"
         )
 
     # A generated secret is fine for a localhost app — it only means everyone is
@@ -156,4 +187,6 @@ def load(*, require_discord: bool = True, require_web: bool = False) -> Config:
         log_level=(os.getenv("LOG_LEVEL") or "INFO").strip().upper(),
         web_password=web_password,
         web_secret=web_secret,
+        access_trusted=access_trusted,
+        access_members=access_members,
     )

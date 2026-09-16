@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from .. import auth, queries
+from .. import access, auth, queries
 from ..deps import Cfg, Db, page, safe_path
 
 router = APIRouter()
@@ -55,6 +55,13 @@ async def whoami(request: Request, db: Db, member_id: Annotated[int, Form()]):
 
 @router.get("/logout")
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(request: Request, cfg: Cfg):
+    """Clear the session — and, behind Access, the edge cookie that outlives it.
+
+    Without the second step signing out is a revolving door: the session goes,
+    the Access cookie doesn't, and the next request signs you back in.
+    """
     auth.sign_out(request)
+    if cfg.access_trusted:
+        return RedirectResponse(access.LOGOUT_URL, status_code=303)
     return RedirectResponse("/login", status_code=303)

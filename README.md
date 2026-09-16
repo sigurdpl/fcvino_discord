@@ -350,13 +350,46 @@ ruff check bot web scripts tests
 
 No network and no token: the football API and Discord are both stubbed. Alongside the unit tests for scoring, wine maths and config validation, `tests/test_loops.py` drives the real background-loop bodies through a whole matchweek — fixtures mirrored, reminder posted once, predictions scored, wrap-up published — which is the cheapest way to catch a regression in the parts that only ever run unattended.
 
+## Hosting it on fcvino.no
+
+The site is reachable at **app.fcvino.no** through a Cloudflare tunnel, with
+Cloudflare Access in front of it. Nothing listens on a public port: uvicorn stays
+bound to `127.0.0.1:8000` and `cloudflared` dials out to Cloudflare, so the tunnel
+is the only route in. Both have to be running:
+
+```bash
+uvicorn web.app:app          # the app, on localhost:8000
+cloudflared tunnel run fcvino-app   # the tunnel, in another terminal
+```
+
+Neither survives a reboot on its own — until they are started again, the domain
+answers with Cloudflare's error page rather than the cellar.
+
+**Who gets in** is decided at the edge, before a request reaches the app. In the
+Zero Trust dashboard:
+
+- **Integrations → Identity providers** → add **One-time PIN**. Worth knowing:
+  new Zero Trust organisations default to the *Cloudflare* identity provider,
+  which asks for a Cloudflare account's email and password at
+  `dash.cloudflare.com` — no good for a club, and OTP is no longer added
+  automatically. Add OTP, then remove the Cloudflare provider.
+- **Access controls → Applications** → the app's *Policies*: Action **Allow**,
+  Include **Emails**, listing the club's addresses. That list is the gate; OTP
+  only proves someone owns an address already on it.
+
+**The app then trusts that decision.** Set `FCVINO_ACCESS=1` and whoever
+Cloudflare vouched for is signed in on arrival — no club password, and with
+`FCVINO_ACCESS_MEMBERS` mapping addresses to names, no "who are you?" prompt
+either. Leave both unset on a laptop: `web/access.py` explains why the header is
+only trustworthy when Cloudflare is the sole way to reach the origin, and what
+would have to replace it if the app were ever exposed directly.
+
 ## Notes
 
 - **Neither half is online unless you have started it.** `python -m bot` for
-  Discord, `uvicorn web.app:app` for the site. The web app is `localhost` only
-  for now — putting it somewhere the club can reach means picking a host, and
-  that is the point at which the shared password should become Discord OAuth and
-  `https_only=True` in `web/app.py`.
+  Discord, `uvicorn web.app:app` for the site — plus the tunnel, if the club is
+  to reach it. Identity is still on the honour system for anyone signing in with
+  the club password locally; behind Access it is the address Cloudflare verified.
 - **The bot is only online while `python -m bot` is running.** Close the terminal or let the Mac sleep and it goes offline; reminders in that window are missed rather than fired late. When that gets annoying, the same code moves to a Raspberry Pi or a small VPS — the only change is where `.env` lives.
 - `.env` and `data/` are gitignored. If a token ever does land in a commit, hit **Reset Token** in the Developer Portal. Rotating the token is the fix; rewriting history is not.
 - Command names are English. If you'd rather have `/vin`, `/fotball` and `/tips`, it's a rename in one place per cog.
