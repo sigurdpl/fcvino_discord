@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from bot.config import Config
 from bot.db import Database
 
-from . import auth
+from . import access, auth
 from .avatars import colour, initials
 from .queries import IndexCache
 from .search import Index
@@ -65,9 +65,34 @@ def get_index(request: Request) -> Index:
 
 
 def require_login(request: Request) -> None:
-    """Gate every page except /login — this is nine people's private notes."""
-    if not auth.is_signed_in(request):
-        raise LoginRequired(request.url.path)
+    """Gate every page except /login — this is nine people's private notes.
+
+    Cloudflare Access, where it is in front of us, has already established who
+    this is by email; that counts as signing in, and the club password is only
+    asked for when it hasn't. See `web/access.py` for why the header is trusted.
+    """
+    if auth.is_signed_in(request):
+        return
+    if _sign_in_via_access(request):
+        return
+    raise LoginRequired(request.url.path)
+
+
+def _sign_in_via_access(request: Request) -> bool:
+    """Sign in — and claim a name where the address maps to one — from Access."""
+    email = access.identity(request, get_config(request))
+    if email is None:
+        return False
+    auth.sign_in(request)
+    members = _members(request)
+    name = access.member_name(email, get_config(request), [m["name"] for m in members])
+    # Only a name the club's records already know: a hand-written .env mapping
+    # can name anyone at all, and a typo there should leave you unnamed rather
+    # than invent an eleventh member.
+    match = next((m for m in members if m["name"] == name), None)
+    if match is not None:
+        auth.claim_member(request, match["id"], match["name"])
+    return True
 
 
 def redirect_to_login(request: Request, next_url: str) -> RedirectResponse:

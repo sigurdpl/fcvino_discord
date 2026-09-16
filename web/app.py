@@ -58,7 +58,8 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         SessionMiddleware,
         secret_key=cfg.web_secret,
         session_cookie="fcvino",
-        https_only=False,   # localhost is http; flip this on once it is hosted
+        # Secure once it is hosted behind Cloudflare, plain http on localhost.
+        https_only=cfg.access_trusted,
         same_site="lax",
     )
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")

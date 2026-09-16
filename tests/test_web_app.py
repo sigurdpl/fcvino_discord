@@ -8,6 +8,7 @@ schema has to show up here as a failure.
 from __future__ import annotations
 
 import dataclasses
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -150,6 +151,158 @@ def test_an_offsite_redirect_is_not_honoured(client):
 def test_signing_out_clears_the_session(signed_in):
     signed_in.get("/logout")
     assert signed_in.get("/wine", follow_redirects=False).status_code == 303
+
+
+# -- Cloudflare Access as the front door ------------------------------------
+
+ACCESS_HEADER = {"Cf-Access-Authenticated-User-Email": "Morten@Example.COM"}
+
+
+@pytest.fixture()
+def behind_access(cellar, tmp_path):
+    """The app as it runs in production: Cloudflare vouches, we believe it."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={"morten@example.com": "Morten", "nobody@example.com": "Nigel"},
+    )
+    with TestClient(create_app(cfg)) as c:
+        yield c
+
+
+def test_a_vouched_email_needs_no_password(behind_access):
+    assert behind_access.get("/wine", headers=ACCESS_HEADER).status_code == 200
+
+
+def test_a_vouched_email_is_already_a_name(behind_access):
+    """No password page and no dropdown: the address says who you are."""
+    page = behind_access.get("/wine", headers=ACCESS_HEADER).text
+    assert "Morten" in page
+    assert "haven't said who you are" not in page
+
+
+def test_the_header_alone_is_not_enough(client):
+    """Off the tunnel the header is just a header anyone could have typed."""
+    response = client.get("/wine", headers=ACCESS_HEADER, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_behind_access_a_bare_request_still_meets_the_gate(behind_access):
+    assert behind_access.get("/wine", follow_redirects=False).status_code == 303
+
+
+def test_an_address_mapped_to_nobody_we_know_is_signed_in_but_unnamed(behind_access):
+    """A typo in the .env mapping leaves you anonymous, not somebody else."""
+    page = behind_access.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": "nobody@example.com"}
+    ).text
+    assert "haven't said who you are" in page
+
+
+def test_an_unmapped_address_still_gets_in(behind_access):
+    """Access already decided they belong; the name is the only open question."""
+    response = behind_access.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": "guest@example.com"}
+    )
+    assert response.status_code == 200
+    assert "haven't said who you are" in response.text
+
+
+def test_signing_out_goes_through_cloudflare(behind_access):
+    """Clearing our session alone would be a revolving door — Access still knows."""
+    response = behind_access.get(
+        "/logout", headers=ACCESS_HEADER, follow_redirects=False
+    )
+    assert response.headers["location"] == "/cdn-cgi/access/logout"
+
+
+def test_signing_out_locally_still_goes_to_the_login_page(signed_in):
+    response = signed_in.get("/logout", follow_redirects=False)
+    assert response.headers["location"] == "/login"
+
+
+# -- reading the member off the address -------------------------------------
+#
+# The club's addresses are already listed in the Cloudflare policy; making
+# someone list them again in .env just to be recognised is duplication. Most of
+# them start with the member's own first name, so that is where the name comes
+# from, and only the addresses that don't need writing down.
+
+
+@pytest.fixture()
+def unmapped(cellar, tmp_path):
+    """Behind Access with FCVINO_ACCESS_MEMBERS empty — the intended setup."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={},
+    )
+    with TestClient(create_app(cfg)) as c:
+        yield c
+
+
+def claimed_name(client, address: str) -> str | None:
+    """Who the app thinks you are, or None if it is still asking.
+
+    Read out of the header rather than off the whole page: every member's name
+    appears in the "who are you?" dropdown, so `"Morten" in page` would pass
+    even when nothing had been matched at all. That prompt's absence is the
+    reliable signal, and the header carries the name itself.
+    """
+    page = client.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": address}
+    ).text
+    if "haven't said who you are" in page:
+        return None
+    found = re.search(r'class="avatar sm"[^>]*title="([^"]+)"', page)
+    return found.group(1) if found else None
+
+
+def test_the_address_names_you_with_no_mapping_at_all(unmapped):
+    assert claimed_name(unmapped, "morten@example.com") == "Morten"
+
+
+def test_an_accent_in_the_name_is_folded_past(unmapped, cellar):
+    """`havard@` has to find Håvard — nobody puts å in an address."""
+    cellar.execute("INSERT INTO wine_members (name) VALUES ('Håvard')")
+    assert claimed_name(unmapped, "havard@example.com") == "Håvard"
+
+
+def test_a_firstname_lastname_address_still_lands(unmapped):
+    assert claimed_name(unmapped, "morten.hestmann@work.example.com") == "Morten"
+
+
+def test_a_prefix_is_not_a_match(unmapped):
+    """Tore must not be claimed by tor@ — folded, but always whole."""
+    assert claimed_name(unmapped, "tor@example.com") is None
+
+
+def test_an_address_that_says_nothing_leaves_you_to_pick(unmapped):
+    assert claimed_name(unmapped, "post@fcvino.no") is None
+
+
+def test_the_mapping_overrules_the_address(cellar, tmp_path):
+    """A wrong guess has to be fixable, and .env is the only place to fix it."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={"morten@example.com": "Tore"},
+    )
+    with TestClient(create_app(cfg)) as client:
+        assert claimed_name(client, "morten@example.com") == "Tore"
 
 
 # -- who you are ------------------------------------------------------------
