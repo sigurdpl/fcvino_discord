@@ -84,6 +84,12 @@ def client(cellar, tmp_path):
         web_password=PASSWORD,
         web_secret="test-secret-not-a-real-one",
         football_token=None,          # no network from the test suite
+        # Pinned, not inherited: config.load reads the developer's own .env, and
+        # once that has FCVINO_ACCESS=1 for the real deployment this fixture
+        # would quietly become the Access one — right down to a Secure-only
+        # cookie that never survives http in a test.
+        access_trusted=False,
+        access_members={},
     )
     with TestClient(create_app(cfg)) as c:
         yield c
@@ -303,6 +309,43 @@ def test_the_mapping_overrules_the_address(cellar, tmp_path):
     )
     with TestClient(create_app(cfg)) as client:
         assert claimed_name(client, "morten@example.com") == "Tore"
+
+
+# -- the search form as a browser actually submits it -----------------------
+#
+# Every filter field is sent on every search, touched or not, so an untouched
+# `<input type="number">` arrives as `year_from=`. Parsed strictly that is not a
+# number, and the whole request was refused before it reached the index — which
+# looked like the search box simply doing nothing, because htmx won't swap in a
+# 4xx and the form's own submit goes through htmx too.
+
+BLANK_FILTERS = {
+    "country": "", "region": "", "grape": "", "member": "",
+    "year_from": "", "year_to": "", "vintage_from": "", "vintage_to": "",
+    "min_score": "",
+}
+
+
+@pytest.mark.parametrize("path", ["/wine", "/wine/results"])
+def test_searching_with_every_filter_left_blank(signed_in, path):
+    response = signed_in.get(path, params={"q": "barolo", **BLANK_FILTERS})
+    assert response.status_code == 200
+    assert "Massolino Barolo 2015" in response.text
+
+
+def test_a_filter_still_works_when_its_neighbours_are_blank(signed_in):
+    """Blank must mean "no filter", not "no results"."""
+    rows = signed_in.get(
+        "/wine/results", params={**BLANK_FILTERS, "q": "", "min_score": "90"}
+    ).text
+    assert "Ch. Musar 2005" in rows      # averages 92.3
+    assert "Boroli Barolo 2005" not in rows  # averages 80.0
+
+
+def test_a_number_that_is_not_a_number_is_still_refused(signed_in):
+    """Blank is meaningful; nonsense is not, and must not read as no filter."""
+    response = signed_in.get("/wine/results", params={"min_score": "vintage"})
+    assert response.status_code == 422
 
 
 # -- who you are ------------------------------------------------------------

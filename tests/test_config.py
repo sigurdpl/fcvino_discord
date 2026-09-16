@@ -21,6 +21,8 @@ def clean_env(monkeypatch):
         "REMINDER_COMPETITIONS",
         "PREDICTION_COMPETITION",
         "LOG_LEVEL",
+        "FCVINO_ACCESS",
+        "FCVINO_ACCESS_MEMBERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -108,3 +110,44 @@ def test_a_relative_db_path_resolves_from_the_repo_root(monkeypatch):
     monkeypatch.setenv("FCVINO_DB_PATH", "data/other.sqlite3")
     cfg = config.load(require_discord=False)
     assert cfg.db_path == config.REPO_ROOT / "data" / "other.sqlite3"
+
+
+# -- Cloudflare Access ------------------------------------------------------
+
+
+def test_access_is_off_unless_it_is_turned_on(monkeypatch):
+    """The app must not trust the Access header just because it is deployed."""
+    assert config.load(require_discord=False).access_trusted is False
+    monkeypatch.setenv("FCVINO_ACCESS", "0")
+    assert config.load(require_discord=False).access_trusted is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on"])
+def test_the_usual_ways_of_saying_yes(monkeypatch, value):
+    monkeypatch.setenv("FCVINO_ACCESS", value)
+    assert config.load(require_discord=False).access_trusted is True
+
+
+def test_the_member_map_is_read_as_pairs(monkeypatch):
+    monkeypatch.setenv(
+        "FCVINO_ACCESS_MEMBERS", " Sigurd@Example.com=Sigurd , x@y.no=Håvard "
+    )
+    members = config.load(require_discord=False).access_members
+    assert members == {"sigurd@example.com": "Sigurd", "x@y.no": "Håvard"}
+
+
+def test_a_malformed_pair_is_skipped_rather_than_fatal(monkeypatch):
+    """One typo should not stop the site from starting."""
+    monkeypatch.setenv("FCVINO_ACCESS_MEMBERS", "no-equals-sign, a@b.no=Tore, =Nobody")
+    assert config.load(require_discord=False).access_members == {"a@b.no": "Tore"}
+
+
+def test_access_stands_in_for_the_club_password(monkeypatch):
+    """Behind Access there is nothing for WEB_PASSWORD to guard."""
+    monkeypatch.setenv("FCVINO_ACCESS", "1")
+    assert config.load(require_discord=False, require_web=True).web_password is None
+
+    monkeypatch.delenv("FCVINO_ACCESS")
+    with pytest.raises(config.ConfigError) as excinfo:
+        config.load(require_discord=False, require_web=True)
+    assert "WEB_PASSWORD" in str(excinfo.value)
