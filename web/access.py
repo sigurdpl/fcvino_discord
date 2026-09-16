@@ -22,9 +22,12 @@ does not, which is the whole reason it is enough here.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from starlette.requests import Request
 
 from bot.config import Config
+from bot.wine_origin import fold
 
 EMAIL_HEADER = "cf-access-authenticated-user-email"
 
@@ -41,6 +44,32 @@ def identity(request: Request, cfg: Config) -> str | None:
     return email or None
 
 
-def member_name(email: str, cfg: Config) -> str | None:
-    """The club name that address belongs to, from FCVINO_ACCESS_MEMBERS."""
-    return cfg.access_members.get(email.strip().lower())
+def member_name(email: str, cfg: Config, known: Sequence[str]) -> str | None:
+    """Which club member this address belongs to, or None to let them pick.
+
+    Cloudflare knows an email address and nothing else — with a one-time PIN
+    there is no name behind it — while every score and note here is filed under
+    a member's name. Most of the club's addresses start with their own first
+    name, so that is read off the address and only the ones that don't need
+    writing down in `FCVINO_ACCESS_MEMBERS`.
+
+    The map is consulted first so it can overrule a wrong guess: a name claimed
+    this way sticks in the session, and signing out would only derive the same
+    one again, leaving `.env` as the one place to correct it.
+
+    Matching is on folded text but always whole — the local part, or its first
+    token for `firstname.lastname@` addresses. Never a prefix: `tor@` must not
+    walk in as Tore.
+    """
+    address = email.strip().lower()
+    mapped = cfg.access_members.get(address)
+    if mapped:
+        return mapped
+
+    # fold() is the search box's normaliser, so `havard@` finds Håvard for the
+    # same reason `sor afrika` finds Sør Afrika.
+    local = fold(address.partition("@")[0]).strip()
+    if not local:
+        return None
+    wanted = {local, local.partition(" ")[0]}
+    return next((name for name in known if fold(name).strip() in wanted), None)

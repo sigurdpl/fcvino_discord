@@ -377,12 +377,16 @@ Zero Trust dashboard:
   Include **Emails**, listing the club's addresses. That list is the gate; OTP
   only proves someone owns an address already on it.
 
-**The app then trusts that decision.** Set `FCVINO_ACCESS=1` and whoever
-Cloudflare vouched for is signed in on arrival — no club password, and with
-`FCVINO_ACCESS_MEMBERS` mapping addresses to names, no "who are you?" prompt
-either. Leave both unset on a laptop: `web/access.py` explains why the header is
-only trustworthy when Cloudflare is the sole way to reach the origin, and what
-would have to replace it if the app were ever exposed directly.
+**The app then trusts that decision.** Set `FCVINO_ACCESS=1` — that is the whole
+configuration. Whoever Cloudflare vouched for is signed in on arrival, with no
+club password, and the member is read off the address: `sigurd@…` is Sigurd, and
+`havard@…` finds Håvard through the same folding that makes `sor afrika` find
+Sør Afrika in the search box. Only an address that doesn't say a name needs
+writing down, in `FCVINO_ACCESS_MEMBERS`.
+
+Leave both unset on a laptop: `web/access.py` explains why the header is only
+trustworthy when Cloudflare is the sole way to reach the origin, and what would
+have to replace it if the app were ever exposed directly.
 
 ## Notes
 

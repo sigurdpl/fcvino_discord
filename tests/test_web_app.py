@@ -8,6 +8,7 @@ schema has to show up here as a failure.
 from __future__ import annotations
 
 import dataclasses
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -223,6 +224,85 @@ def test_signing_out_goes_through_cloudflare(behind_access):
 def test_signing_out_locally_still_goes_to_the_login_page(signed_in):
     response = signed_in.get("/logout", follow_redirects=False)
     assert response.headers["location"] == "/login"
+
+
+# -- reading the member off the address -------------------------------------
+#
+# The club's addresses are already listed in the Cloudflare policy; making
+# someone list them again in .env just to be recognised is duplication. Most of
+# them start with the member's own first name, so that is where the name comes
+# from, and only the addresses that don't need writing down.
+
+
+@pytest.fixture()
+def unmapped(cellar, tmp_path):
+    """Behind Access with FCVINO_ACCESS_MEMBERS empty — the intended setup."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={},
+    )
+    with TestClient(create_app(cfg)) as c:
+        yield c
+
+
+def claimed_name(client, address: str) -> str | None:
+    """Who the app thinks you are, or None if it is still asking.
+
+    Read out of the header rather than off the whole page: every member's name
+    appears in the "who are you?" dropdown, so `"Morten" in page` would pass
+    even when nothing had been matched at all. That prompt's absence is the
+    reliable signal, and the header carries the name itself.
+    """
+    page = client.get(
+        "/wine", headers={"Cf-Access-Authenticated-User-Email": address}
+    ).text
+    if "haven't said who you are" in page:
+        return None
+    found = re.search(r'class="who">\s*(.*?)\s*<a href="/logout"', page, re.S)
+    return (found.group(1) or None) if found else None
+
+
+def test_the_address_names_you_with_no_mapping_at_all(unmapped):
+    assert claimed_name(unmapped, "morten@example.com") == "Morten"
+
+
+def test_an_accent_in_the_name_is_folded_past(unmapped, cellar):
+    """`havard@` has to find Håvard — nobody puts å in an address."""
+    cellar.execute("INSERT INTO wine_members (name) VALUES ('Håvard')")
+    assert claimed_name(unmapped, "havard@example.com") == "Håvard"
+
+
+def test_a_firstname_lastname_address_still_lands(unmapped):
+    assert claimed_name(unmapped, "morten.hestmann@work.example.com") == "Morten"
+
+
+def test_a_prefix_is_not_a_match(unmapped):
+    """Tore must not be claimed by tor@ — folded, but always whole."""
+    assert claimed_name(unmapped, "tor@example.com") is None
+
+
+def test_an_address_that_says_nothing_leaves_you_to_pick(unmapped):
+    assert claimed_name(unmapped, "post@fcvino.no") is None
+
+
+def test_the_mapping_overrules_the_address(cellar, tmp_path):
+    """A wrong guess has to be fixable, and .env is the only place to fix it."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=True,
+        access_members={"morten@example.com": "Tore"},
+    )
+    with TestClient(create_app(cfg)) as client:
+        assert claimed_name(client, "morten@example.com") == "Tore"
 
 
 # -- who you are ------------------------------------------------------------

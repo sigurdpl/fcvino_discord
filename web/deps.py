@@ -81,11 +81,12 @@ def _sign_in_via_access(request: Request) -> bool:
     if email is None:
         return False
     auth.sign_in(request)
-    name = access.member_name(email, get_config(request))
-    # Only a name the club's records already know: the mapping is hand-written
-    # in .env, and a typo there should leave you unnamed rather than invent a
-    # tenth member.
-    match = next((m for m in _members(request) if m["name"] == name), None)
+    members = _members(request)
+    name = access.member_name(email, get_config(request), [m["name"] for m in members])
+    # Only a name the club's records already know: a hand-written .env mapping
+    # can name anyone at all, and a typo there should leave you unnamed rather
+    # than invent an eleventh member.
+    match = next((m for m in members if m["name"] == name), None)
     if match is not None:
         auth.claim_member(request, match["id"], match["name"])
     return True
