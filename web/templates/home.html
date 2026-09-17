@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}FC Vino{% endblock %}
+
+{#- The hero is this page's header, so it replaces the cover card rather than
+    sitting under it: its lower-only corners are cut to meet the bar above. -#}
+{% block chrome %}
+<section class="fv-hero">
+  <div class="fv-hero-photo group"></div>
+  <div class="fv-hero-photo stadium"></div>
+  <div class="fv-hero-content">
+    <img class="fv-logo" src="/static/fcvino-logo.png" alt="FC Vino">
+    <div class="fv-eyebrow">
+      Football · Wine · Friendship{% if since %} · Since {{ since }}{% endif %}
+    </div>
+    <div class="fv-hero-title">Same passion.<br>More of it.</div>
+    <div class="fv-hero-sub">
+      Two obsessions, both taken seriously — and everything we have poured or
+      travelled to, kept in one place.
+    </div>
+    <a class="fv-cta" href="/wine">Explore the cellar&nbsp;&nbsp;→</a>
+  </div>
+</section>
+<section class="card flush">{% include "_tabs.html" %}</section>
+{% endblock %}
+
+{% block body %}
+
+<section class="fv-stats">
+  <div class="fv-stat"><div class="n">{{ totals['members'] }}</div><div class="l">Members</div></div>
+  <div class="fv-stat"><div class="n">{{ since or '—' }}</div><div class="l">Since</div></div>
+  <div class="fv-stat"><div class="n">{{ trips|length }}</div><div class="l">Away trips</div></div>
+  <div class="fv-stat"><div class="n">{{ grounds|length }}</div><div class="l">Grounds</div></div>
+  <div class="fv-stat"><div class="n">{{ cities|length }}</div><div class="l">Cities</div></div>
+  <div class="fv-stat"><div class="n">{{ totals['tastings'] }}</div><div class="l">Tastings</div></div>
+  <div class="fv-stat"><div class="n">{{ totals['wines'] }}</div><div class="l">Wines</div></div>
+</section>
+
+<section class="fv-grid-4">
+  <article class="fv-card">
+    <div class="fv-card-photo" style="background-image: url('/static/fcvino-stadium.jpg')"></div>
+    <div class="fv-card-body">
+      <h2>Away trips</h2>
+      <p>{{ trips|length }} of them, {{ countries|length }} countries, and the matches we saw.</p>
+      <a class="fv-btn" href="/trips">Follow the trips →</a>
+    </div>
+  </article>
+  <article class="fv-card">
+    <div class="fv-card-photo" style="background-image: url('/static/fcvino-glasses.png')"></div>
+    <div class="fv-card-body">
+      <h2>Tastings</h2>
+      <p>{{ totals['tastings'] }} evenings, each with its theme, its host and every score.</p>
+      <a class="fv-btn" href="/wine/tastings">See the evenings →</a>
+    </div>
+  </article>
+  <article class="fv-card">
+    <div class="fv-card-photo" style="background-image: url('/static/fcvino-bottles.png')"></div>
+    <div class="fv-card-body">
+      <h2>The cellar</h2>
+      <p>{{ totals['wines'] }} bottles and {{ totals['ratings'] }} ratings, searchable.</p>
+      <a class="fv-btn brass" href="/wine">Search the cellar →</a>
+    </div>
+  </article>
+  <article class="fv-card">
+    <div class="fv-card-photo" style="background-image: url('/static/cover.jpg')"></div>
+    <div class="fv-card-body">
+      <h2>Football</h2>
+      <p>Tables, fixtures and results for the leagues we argue about.</p>
+      <a class="fv-btn" href="/football">Check the table →</a>
+    </div>
+  </article>
+</section>
+
+<section class="fv-lower">
+  <div class="fv-panel">
+    <h2>Latest <a class="faint small" href="/wine/tastings">See all →</a></h2>
+    <ul class="fv-list">
+      {% for item in recent %}
+      <li>
+        <span class="avatar sm">{{ '🍷' if item.kind == 'Tasting' else '⚽' }}</span>
+        <div>
+          <div class="type">{{ item.kind }}</div>
+          <div class="name"><a href="{{ item.href }}">{{ item.name }}</a></div>
+          <div class="meta">
+            {{ fmt_month(item.year, item.month) }}{% if item.detail %} · {{ item.detail }}{% endif %}
+          </div>
+        </div>
+        <span class="faint">›</span>
+      </li>
+      {% else %}
+      <li><div class="muted small">Nothing recorded yet.</div></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="fv-panel">
+    <h2>Where we have been <a class="faint small" href="/trips">See the trips →</a></h2>
+    <div class="fv-map"></div>
+    <div class="inline" style="margin-top: .7rem">
+      {% for country, visits in countries[:8] %}
+        <span class="pill">{{ country }}{% if visits > 1 %} ×{{ visits }}{% endif %}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="fv-panel">
+    <h2>Highest rated <a class="faint small" href="/wine">The whole cellar →</a></h2>
+    <ul class="fv-list">
+      {% for wine in top %}
+      <li>
+        <span class="avatar">{{ loop.index }}</span>
+        <div>
+          <div class="name"><a href="/wine/{{ wine['id'] }}">{{ wine['name'] }}</a></div>
+          <div class="meta">
+            {{ [wine['country'], wine['region'], wine['grape']] | select | join(' · ') or '—' }}
+          </div>
+        </div>
+        <span class="fv-score">{{ wine['average'] | score(0) }}</span>
+      </li>
+      {% else %}
+      <li><div class="muted small">No bottle has enough scores yet.</div></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="fv-quote">
+  <blockquote>
+    “Football takes us to amazing places.<br>
+    Wine makes us stay a little longer.”<br>
+    <span style="font-size: .8em; letter-spacing: .15em">— FC VINO</span>
+  </blockquote>
+</section>
+
+{% endblock %}

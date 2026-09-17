@@ -1,0 +1,11 @@
+{# The one tab strip. Included by base.html's default chrome and again by the
+   landing page, which supplies its own header above it — two copies would be
+   two places to forget a tab. #}
+<nav class="tabs">
+  <a href="/" class="{{ 'on' if path == '/' }}">Home</a>
+  <a href="/wine" class="{{ 'on' if on_cellar }}">Cellar</a>
+  <a href="/wine/boards" class="{{ 'on' if '/boards' in path }}">Boards</a>
+  <a href="/wine/tastings" class="{{ 'on' if '/tastings' in path }}">Tastings</a>
+  <a href="/trips" class="{{ 'on' if path.startswith('/trips') }}">Trips</a>
+  <a href="/football" class="{{ 'on' if path.startswith('/football') }}">Football</a>
+</nav>

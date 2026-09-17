@@ -101,7 +101,7 @@ def signed_in(client):
     return client
 
 
-PAGES = ["/wine", "/wine/boards", "/wine/tastings", "/wine/tastings/1", "/wine/1",
+PAGES = ["/", "/wine", "/wine/boards", "/wine/tastings", "/wine/tastings/1", "/wine/1",
          "/trips", "/trips/2024", "/football"]
 
 
@@ -468,8 +468,11 @@ def test_football_survives_having_no_api_token(signed_in):
     assert "Arsenal" in page.text, "the mirrored result still shows"
 
 
-def test_the_root_redirects_to_the_cellar(signed_in):
-    assert signed_in.get("/", follow_redirects=False).headers["location"] == "/wine"
+def test_the_root_is_the_landing_page(signed_in):
+    """It used to bounce to /wine; now the front door is a page of its own."""
+    response = signed_in.get("/", follow_redirects=False)
+    assert response.status_code == 200
+    assert "Same passion" in response.text
 
 
 # -- the index tracks the database -----------------------------------------
@@ -546,3 +549,74 @@ def test_avatar_colours_are_inline_and_stable(signed_in):
     from web.avatars import colour
     page = signed_in.get("/wine/3").text
     assert f"background: {colour('Morten')}" in page
+
+
+# -- the landing page -------------------------------------------------------
+#
+# It restates numbers that other pages own — bottles, tastings, trips — so the
+# tests that matter are the ones proving it reads them from the same queries
+# rather than keeping a second copy that can drift.
+
+
+def test_the_landing_page_counts_agree_with_the_cellar(signed_in, cellar):
+    from web import queries
+    page = signed_in.get("/").text
+    totals = queries.cellar_totals(cellar)
+    for number in (totals["wines"], totals["ratings"], totals["tastings"], totals["members"]):
+        assert str(number) in page
+
+
+def test_the_landing_page_names_the_club_bottles(signed_in):
+    """The mockup listed Romanée-Conti; this has to be what we actually drank."""
+    page = signed_in.get("/").text
+    assert "Ch. Musar 2005" in page          # averages 92.3, the cellar's best
+    assert "Romanée-Conti" not in page
+
+
+def test_the_landing_page_lists_recent_evenings_and_trips(signed_in):
+    page = signed_in.get("/").text
+    assert "Ch. Musar" in page               # the May 2020 tasting
+    assert "Spain, Bilbao" in page           # the 2024 trip
+
+
+def test_top_wines_needs_more_than_one_opinion(cellar):
+    """A bottle one person loved must not outrank one the whole club scored."""
+    from bot import wine_stats
+    from web import queries
+    cellar.execute(
+        """INSERT INTO wines (name, country, tasting_id, added_by, added_at)
+           VALUES ('A Lone Opinion', 'France', 1, 0, '2020-01-01T00:00:00+00:00')"""
+    )
+    wine_id = cellar.query_one("SELECT id FROM wines WHERE name = 'A Lone Opinion'")["id"]
+    cellar.execute(
+        "INSERT INTO wine_ratings (wine_id, member_id, score, rated_at)"
+        " VALUES (?, 1, 100, '2020-01-01T00:00:00+00:00')",
+        (wine_id,),
+    )
+    names = [row["name"] for row in queries.top_wines(cellar, 10)]
+    assert "A Lone Opinion" not in names
+    assert wine_stats.MIN_RATINGS == 2
+
+
+def test_top_wines_are_ordered_by_the_group_average(cellar):
+    from web import queries
+    rows = queries.top_wines(cellar, 10)
+    assert [row["name"] for row in rows][0] == "Ch. Musar 2005"
+    assert [row["average"] for row in rows] == sorted(
+        (row["average"] for row in rows), reverse=True
+    )
+
+
+def test_recent_activity_interleaves_both_kinds_newest_first(cellar):
+    from web import queries
+    feed = queries.recent_activity(cellar, 10)
+    assert {item["kind"] for item in feed} == {"Tasting", "Away trip"}
+    keys = [(item["year"], item["month"] or 0) for item in feed]
+    assert keys == sorted(keys, reverse=True)
+
+
+def test_the_bot_and_the_web_agree_on_what_qualifies(cellar):
+    """One number, one place — the cog now takes it from bot.wine_stats."""
+    from bot import wine_stats
+    from bot.cogs.wine import MIN_RATINGS_FOR_BOARD
+    assert MIN_RATINGS_FOR_BOARD is wine_stats.MIN_RATINGS

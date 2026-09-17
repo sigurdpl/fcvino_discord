@@ -28,6 +28,11 @@ from typing import NamedTuple, Protocol
 
 MIN_WINES = 5
 
+# How many scores a single bottle needs before it can be ranked against the
+# others. Lives here rather than in the Discord cog that used to own it, because
+# the web app asks the same question and must not answer it differently.
+MIN_RATINGS = 2
+
 
 class Row(Protocol):
     """What `tally` needs: a bucket, the bottle and evening it came from, one score."""

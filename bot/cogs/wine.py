@@ -30,7 +30,10 @@ from ..formatting import (
 
 log = logging.getLogger(__name__)
 
-MIN_RATINGS_FOR_BOARD = 2
+# Kept as a name here because the cog says it in half a dozen user-facing
+# sentences; the number itself is wine_stats.MIN_RATINGS, shared with the web
+# app so the two halves cannot disagree about what qualifies.
+MIN_RATINGS_FOR_BOARD = stats.MIN_RATINGS
 BOARD_DEFAULT_LIMIT = 10
 
 # The origin boards live in a code block, so every row has to be the same width

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from bot import trip_stats, wine_stats
 from bot.db import Database
 
 from .search import Index, Row
@@ -219,6 +220,87 @@ def trips(db: Database) -> list[sqlite3.Row]:
 
 def trip(db: Database, year: int) -> sqlite3.Row | None:
     return db.query_one("SELECT * FROM trips WHERE year = ?", (year,))
+
+
+def trip_summary(db: Database) -> dict:
+    """The headline numbers, all from `bot/trip_stats.py`.
+
+    Lives here rather than in the trips route because the landing page wants the
+    same counts, and two places counting trips independently is how two pages
+    end up disagreeing.
+    """
+    rows = trips(db)
+    matches = db.trip_match_rows()
+    wins, draws, losses = trip_stats.result_split(matches)
+    years = trip_stats.years(rows)
+    return {
+        "trips": rows,
+        "matches": matches,
+        "countries": trip_stats.country_counts(rows),
+        "clubs": trip_stats.club_counts(matches),
+        "cities": trip_stats.distinct_cities(matches),
+        "goals": trip_stats.total_goals(matches),
+        "goals_per_game": trip_stats.goals_per_game(matches),
+        "grounds": trip_stats.distinct_stadiums(matches),
+        "played": trip_stats.played(matches),
+        "result_split": (wins, draws, losses),
+        "streak": trip_stats.longest_year_streak(years),
+        "biggest_win": trip_stats.biggest_win(matches),
+        "highest_scoring": trip_stats.highest_scoring(matches),
+        "years": years,
+    }
+
+
+# -- the landing page -------------------------------------------------------
+
+
+def top_wines(db: Database, limit: int = 5) -> list[sqlite3.Row]:
+    """Bottles by group average, best first.
+
+    The same question `/wine top` answers in Discord, asked the same way, so the
+    two halves cannot put a different bottle at the top.
+    """
+    return db.query(
+        """SELECT w.*, AVG(r.score) AS average, COUNT(r.score) AS ratings
+           FROM wines w JOIN wine_ratings r ON r.wine_id = w.id
+           GROUP BY w.id HAVING ratings >= ?
+           ORDER BY average DESC, ratings DESC, w.name LIMIT ?""",
+        (wine_stats.MIN_RATINGS, limit),
+    )
+
+
+def recent_activity(db: Database, limit: int = 4) -> list[dict]:
+    """The club's last few evenings and away trips, newest first, interleaved.
+
+    The two have different notions of when: a tasting knows a year and usually a
+    month, a trip knows a departure date. Both collapse to (year, month) for
+    ordering, which is as fine as the tastings ever get.
+    """
+    feed: list[dict] = []
+    for row in tastings(db)[: limit * 2]:
+        feed.append({
+            "kind": "Tasting",
+            "name": row["theme"] or "A tasting",
+            "year": row["year"],
+            "month": row["month"],
+            "detail": f"{row['wines']} wines",
+            "href": f"/wine/tastings/{row['id']}",
+        })
+    for row in trips(db)[: limit * 2]:
+        month = None
+        if row["date_from"] and len(row["date_from"]) >= 7:
+            month = int(row["date_from"][5:7])
+        where = ", ".join(part for part in (row["country"], row["city"]) if part)
+        feed.append({
+            "kind": "Away trip",
+            "name": where or str(row["year"]),
+            "year": row["year"],
+            "month": month,
+            "detail": row["notes"] or "",
+            "href": f"/trips/{row['year']}",
+        })
+    feed.sort(key=lambda item: (item["year"] or 0, item["month"] or 0), reverse=True)
+    return feed[:limit]
 
 
 # -- football ---------------------------------------------------------------
