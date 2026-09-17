@@ -88,13 +88,21 @@ h2 { font-size: 1.08rem; margin: 0 0 .65rem; color: var(--ink); }
   border-bottom: 1px solid rgba(181,148,90,.18);
 }
 
+/* The wordmark is an <img> in the markup, not a background here, so that it can
+   fall back to the club's name where the file is missing — the pictures are not
+   in the repository. Anything sizing it belongs in this one rule: when it was
+   split across two, a browser holding an older copy of this sheet drew the
+   background logo *and* the image at its natural 590px, side by side. */
 .brand {
-  color: transparent;
-  width: 7.6rem;
-  height: 2.6rem;
+  display: flex;
+  align-items: center;
   flex: 0 0 auto;
-  background: url("/static/fcvino-logo.png") center/contain no-repeat;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.15rem;
+  letter-spacing: .01em;
 }
+.brand img { display: block; height: 2.2rem; width: auto; }
 
 .bar nav { display: flex; gap: .2rem; flex-wrap: wrap; }
 .bar nav a {
@@ -360,18 +368,3 @@ button.quiet:hover { background: var(--line); }
   width: 100%; aspect-ratio: 16/9; display: block;
   background: var(--surface-2) center/cover no-repeat;
 }
-
-/* The wordmark carries its own fallback: an <img> shows its alt text when the
-   file is absent, where a background image would leave the bar blank — and the
-   club's pictures are not in the repository, so absent is a normal state. This
-   supersedes the background in .brand above rather than editing it. */
-.brand {
-  background: none;
-  width: auto;
-  height: auto;
-  color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.15rem;
-  letter-spacing: .01em;
-}
-.brand img { display: block; height: 2.2rem; width: auto; }
