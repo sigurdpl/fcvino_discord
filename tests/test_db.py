@@ -41,6 +41,8 @@ def test_schema_creates_every_table(db):
         "trips",
         "trip_matches",
         "trip_goals",
+        "events",
+        "event_wines",
     } <= names
     assert "guild_config" not in names, "replaced by guild_channels"
 
