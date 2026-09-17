@@ -1,0 +1,337 @@
+/* FC Vino — Dark Club v2
+   Based on the existing FC Vino selectors so functionality can stay intact.
+   Primary: near-black. Secondary: dark burgundy. Accent: brass/gold. */
+
+:root {
+  --page: #0a0b0a;
+  --surface: #111311;
+  --surface-2: #171916;
+  --card: #161816;
+  --card-2: #1d201c;
+  --line: #2c2f2a;
+  --line-soft: #232621;
+  --ink: #f5f1e8;
+  --muted: #b4aea4;
+  --faint: #7f7b73;
+
+  --navy: #0a0b0a; /* kept for existing selector compatibility */
+  --navy-soft: #242722;
+  --navy-wash: #1a1d1a;
+  --navy-ink: #f4efe7;
+
+  --red: #6f172b;
+  --red-soft: #8b2239;
+  --red-wash: #2a1118;
+
+  --wine: #6f172b;
+  --wine-soft: #8b2239;
+  --brass: #b5945a;
+  --brass-soft: #d0b274;
+
+  --chip: #20231f;
+  --good: #5f9d79;
+  --bad: #d26a59;
+
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 12px 30px rgba(0,0,0,.28), 0 1px 1px rgba(0,0,0,.6);
+  --col: 76rem;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--page); }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 80% -10%, rgba(111,23,43,.14), transparent 36rem),
+    var(--page);
+  color: var(--ink);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--brass-soft); text-decoration: none; }
+a:hover { color: #fff; text-decoration: none; }
+
+main {
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: 1.25rem 1rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+h1, h2, .brand, .fv-hero-title, .fv-card h2, .fv-panel h2 {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+h1 { font-size: 1.8rem; margin: 0 0 .35rem; letter-spacing: -.015em; }
+h2 { font-size: 1.08rem; margin: 0 0 .65rem; color: var(--ink); }
+
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: .85rem; }
+.strong { font-weight: 700; }
+.nowrap { white-space: nowrap; }
+.crumb { margin: 0 0 .6rem; font-size: .88rem; color: var(--muted); }
+.mark { color: var(--brass-soft); font-weight: 700; }
+
+.bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: .9rem;
+  padding: .72rem 1rem;
+  background: rgba(7,8,7,.92);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(181,148,90,.18);
+}
+
+.brand {
+  color: transparent;
+  width: 7.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  background: url("/static/fcvino-logo.png") center/contain no-repeat;
+}
+
+.bar nav { display: flex; gap: .2rem; flex-wrap: wrap; }
+.bar nav a {
+  color: #ddd7ce;
+  padding: .55rem .8rem;
+  border-radius: 999px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+.bar nav a:hover { background: rgba(255,255,255,.06); }
+.bar nav a.on { background: var(--red); color: #fff; box-shadow: 0 0 0 1px rgba(214,174,104,.15) inset; }
+.bar .who { margin-left: auto; display: flex; align-items: center; gap: .6rem; color: var(--muted); }
+.bar .who a { color: var(--brass-soft); font-size: 1.05rem; }
+
+.whoami {
+  max-width: var(--col);
+  margin: .75rem auto 0;
+  padding: .8rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,.018), rgba(255,255,255,.008)), var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.2rem;
+}
+.card.flush { padding: 0; overflow: hidden; }
+
+/* Existing group cover becomes a dark club hero. */
+.cover {
+  height: 220px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(4,5,4,.92) 0%, rgba(4,5,4,.52) 42%, rgba(4,5,4,.20) 100%),
+    linear-gradient(180deg, rgba(7,8,7,.15), rgba(7,8,7,.66)),
+    url("/static/cover.jpg") center 55% / cover no-repeat,
+    #111;
+  box-shadow: var(--shadow);
+}
+@media (min-width: 40rem) { .cover { height: 300px; } }
+
+.group-head { padding: 1rem 1.1rem .45rem; }
+.group-head h1 { font-size: 1.7rem; }
+.group-head .numbers { color: var(--muted); font-size: .9rem; }
+
+.tabs {
+  display: flex; gap: .15rem; overflow-x: auto;
+  border-top: 1px solid var(--line);
+  padding: .25rem .6rem 0;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a {
+  padding: .68rem .8rem; white-space: nowrap;
+  color: var(--muted); font-weight: 650; font-size: .92rem;
+  border-bottom: 3px solid transparent;
+  border-radius: 8px 8px 0 0;
+}
+.tabs a:hover { background: var(--chip); }
+.tabs a.on { color: var(--ink); border-bottom-color: var(--red-soft); }
+
+input, select, button {
+  font: inherit; color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: .48rem .82rem;
+}
+input::placeholder { color: #77746d; }
+input:focus, select:focus { outline: 2px solid rgba(181,148,90,.45); outline-offset: 1px; }
+button { background: var(--red); color: #fff; border-color: transparent; cursor: pointer; font-weight: 650; }
+button:hover { background: var(--red-soft); }
+button.quiet { background: var(--chip); color: var(--ink); }
+
+.searchbox { position: relative; display: flex; align-items: center; }
+.searchbox input {
+  width: 100%; font-size: 1rem; padding: .72rem 1rem .72rem 2.5rem;
+  background: var(--surface-2); border-color: var(--line);
+}
+.searchbox .glass { position: absolute; left: .95rem; color: var(--faint); pointer-events: none; }
+
+.filters { margin-top: .7rem; font-size: .9rem; }
+.filters summary { cursor: pointer; color: var(--muted); list-style: none; }
+.filters summary::-webkit-details-marker { display: none; }
+.filters summary::before { content: "⚙ "; color: var(--brass); }
+.filters .grid { display: grid; gap: .55rem; margin: .75rem 0; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); }
+.filters label { display: flex; flex-direction: column; gap: .2rem; color: var(--muted); }
+.filters select, .filters input { width: 100%; border-radius: 8px; }
+.pill { background: var(--red); color: #fff; border-radius: 999px; padding: .05rem .45rem; font-size: .7rem; }
+.inline { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.count { color: var(--muted); font-size: .88rem; margin: 0 0 .5rem; }
+
+.rows { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.rows th { text-align: left; font-weight: 700; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); padding: .4rem .5rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rows td { padding: .62rem .5rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.rows tbody tr:last-child td { border-bottom: none; }
+.rows tbody tr:hover { background: rgba(181,148,90,.06); }
+.rows .num, .rows th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 2.1rem; height: 2.1rem; flex: 0 0 auto; border-radius: 50%; color: #fff; background: var(--red); font-size: .8rem; font-weight: 700; }
+.note { display: flex; gap: .65rem; padding: .55rem 0; align-items: flex-start; }
+.note + .note { border-top: 1px solid var(--line); }
+.note .bubble { min-width: 0; flex: 1; }
+.note .line { display: flex; align-items: baseline; gap: .5rem; }
+.note .who { font-weight: 650; }
+.note .said { background: var(--chip); border-radius: 0 var(--radius) var(--radius) var(--radius); padding: .4rem .65rem; margin-top: .25rem; font-size: .93rem; }
+.note.me .said { background: var(--red-wash); }
+.note .score { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--brass-soft); }
+
+.score-hero .big { font-size: 2.7rem; font-weight: 800; color: var(--brass-soft); font-variant-numeric: tabular-nums; line-height: 1; }
+.cols { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+@media (min-width: 44rem) { .cols { grid-template-columns: 1fr 1fr; } }
+
+footer { max-width: var(--col); margin: 0 auto; padding: .8rem 1rem 3rem; color: var(--faint); font-size: .82rem; text-align: center; }
+
+/* Optional home/dashboard components for the FC Vino redesign. */
+.fv-home { max-width: var(--col); margin: 0 auto; padding: 0 1rem 3rem; }
+.fv-hero {
+  position: relative; min-height: 420px; border: 1px solid var(--line); border-radius: 0 0 var(--radius-lg) var(--radius-lg); overflow: hidden;
+  background: #111;
+  box-shadow: var(--shadow);
+}
+.fv-hero::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(5,6,5,.86) 0%, rgba(5,6,5,.5) 48%, rgba(5,6,5,.18) 100%), linear-gradient(180deg, rgba(0,0,0,.05) 45%, rgba(0,0,0,.8) 100%);
+  z-index: 1;
+}
+.fv-hero-photo { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.fv-hero-photo.group { left: 0; right: 50%; background-image: url("/static/fcvino-group.jpg"); background-position: center 46%; }
+.fv-hero-photo.stadium { left: 46%; right: 0; background-image: url("/static/fcvino-stadium.jpg"); background-position: center; }
+.fv-hero-content { position: relative; z-index: 2; min-height: 420px; padding: 3.5rem 3.5rem 2.25rem; display: flex; flex-direction: column; justify-content: center; max-width: 52rem; }
+.fv-logo { width: 220px; max-width: 50%; margin-bottom: 1.2rem; }
+.fv-eyebrow { color: var(--brass-soft); font-size: .78rem; letter-spacing: .24em; text-transform: uppercase; font-weight: 700; }
+.fv-hero-title { font-size: clamp(2.8rem, 6vw, 5rem); line-height: 1.02; margin: .6rem 0 .8rem; color: #fff; }
+.fv-hero-sub { font-size: 1.05rem; color: #ddd7ce; max-width: 34rem; }
+.fv-cta { align-self: flex-start; margin-top: 1.2rem; background: var(--red); color: #fff; border: 1px solid rgba(208,178,116,.42); border-radius: 8px; padding: .72rem 1rem; font-weight: 700; }
+
+.fv-stats { display: grid; grid-template-columns: repeat(2, 1fr); background: #0d0e0d; border: 1px solid var(--line); border-radius: var(--radius-lg); margin-top: 1rem; overflow: hidden; }
+@media (min-width: 50rem) { .fv-stats { grid-template-columns: repeat(7, 1fr); } }
+.fv-stat { padding: 1rem .75rem; text-align: center; border-right: 1px solid var(--line); }
+.fv-stat:last-child { border-right: 0; }
+.fv-stat .n { font: 2rem Georgia, serif; color: #fff; }
+.fv-stat .l { color: var(--faint); text-transform: uppercase; letter-spacing: .08em; font-size: .68rem; }
+
+.fv-grid-4 { display: grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 1rem; }
+@media (min-width: 52rem) { .fv-grid-4 { grid-template-columns: repeat(4, 1fr); } }
+.fv-card { overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.fv-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+.fv-card-body { padding: 1rem; }
+.fv-card h2 { font-size: 1.2rem; margin: 0 0 .35rem; }
+.fv-card p { color: var(--muted); margin: 0 0 1rem; font-size: .92rem; }
+.fv-card .fv-btn { display: inline-block; background: var(--red); color: #fff; padding: .58rem .8rem; border-radius: 7px; font-weight: 700; font-size: .88rem; }
+.fv-card .fv-btn.brass { background: #6f5b34; }
+
+.fv-lower { display: grid; gap: 1rem; margin-top: 1rem; }
+@media (min-width: 52rem) { .fv-lower { grid-template-columns: 1.05fr .95fr .95fr; } }
+.fv-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 1rem; box-shadow: var(--shadow); }
+.fv-panel h2 { display: flex; align-items: center; justify-content: space-between; }
+.fv-list { list-style: none; margin: 0; padding: 0; }
+.fv-list li { display: grid; grid-template-columns: 58px 1fr auto; gap: .7rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--line-soft); }
+.fv-list li:last-child { border-bottom: 0; }
+.fv-thumb { width: 58px; height: 42px; object-fit: cover; border-radius: 7px; }
+.fv-list .type { color: var(--brass-soft); font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; }
+.fv-list .name { font-weight: 700; }
+.fv-list .meta { color: var(--muted); font-size: .78rem; }
+.fv-score { width: 36px; height: 36px; border-radius: 50%; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+.fv-quote { margin-top: 1rem; min-height: 175px; border-radius: var(--radius-lg); overflow: hidden; background: linear-gradient(90deg, rgba(0,0,0,.76), rgba(0,0,0,.18)), url("/static/fcvino-group.jpg") center/cover; display: flex; align-items: flex-end; padding: 1.5rem; }
+.fv-quote blockquote { margin: 0; max-width: 46rem; font: italic 1.55rem/1.25 Georgia, serif; color: #fff; }
+
+@media (max-width: 47rem) {
+  .bar { flex-wrap: wrap; }
+  .bar nav { order: 3; width: 100%; overflow-x: auto; }
+  .brand { width: 6.2rem; }
+  .fv-hero { min-height: 540px; }
+  .fv-hero-photo.group { right: 0; height: 58%; bottom: 42%; }
+  .fv-hero-photo.stadium { left: 0; top: 56%; }
+  .fv-hero-content { min-height: 540px; padding: 2rem 1.3rem; justify-content: flex-end; }
+  .fv-logo { max-width: 58%; }
+  .fv-hero-title { font-size: 2.65rem; }
+}
+
+/* -- the rest of the app ------------------------------------------------
+   Selectors the templates use that the sheet above doesn't cover yet, in
+   this sheet's own tokens. Nothing here changes the look it establishes:
+   it fills in the login page, the pieces the trips and boards pages are
+   built from, and the states — focus, hover, and the search spinner,
+   which without a rule of its own would sit there lit the whole time. */
+
+h2:not(:first-child) { margin-top: 1.4rem; }
+
+.scroll { overflow-x: auto; }
+
+.error {
+  background: var(--red-wash);
+  border-left: 3px solid var(--bad);
+  padding: .6rem .8rem;
+  border-radius: 6px;
+  margin: 0 0 .8rem;
+}
+
+.bar .who a:hover { color: var(--ink); }
+button.quiet:hover { background: var(--line); }
+.searchbox input:focus { background: var(--surface); border-color: var(--brass); }
+.clear { font-size: .85rem; }
+
+/* Hidden until htmx puts a request in flight, which is the whole point of it. */
+.htmx-indicator { position: absolute; right: 1rem; opacity: 0; color: var(--faint); }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+
+.board td, .board th { padding: .32rem .5rem; }
+
+.avatar.sm { width: 1.6rem; height: 1.6rem; font-size: .65rem; }
+
+/* A wine nobody wrote about is a tall column of numbers, so it collapses to
+   one line each and only opens up when there is something to read. */
+.notes.tight .note { padding: .18rem 0; align-items: center; }
+.notes.tight .note + .note { border-top: none; }
+.notes.tight .avatar { width: 1.6rem; height: 1.6rem; font-size: .65rem; }
+
+/* The average and what it is made of, on one baseline. */
+.score-hero { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; }
+
+.login { max-width: 26rem; margin: 3.5rem auto; text-align: center; }
+.login h1 { font-size: 1.7rem; }
+.login form { display: flex; flex-direction: column; gap: .6rem; margin-top: 1.2rem; }
+.login input { border-radius: 8px; text-align: center; }
+
+.tally { list-style: none; padding: 0; margin: 0; font-size: .9rem; }
+.tally li {
+  display: flex; justify-content: space-between;
+  padding: .3rem 0; border-bottom: 1px solid var(--line-soft);
+}
+.tally li:last-child { border-bottom: none; }
