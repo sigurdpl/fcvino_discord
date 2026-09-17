@@ -19,3 +19,11 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Club photographs. The repository is public and these show the nine of us by
+# name and face, so they are shared out of band and live only on the server.
+# The stylesheet layers a gradient under every one of them, so a checkout
+# without them renders as a design rather than as broken images.
+web/static/fcvino-*.jpg
+# Robert's mockup carries the same photographs base64'd inside it.
+web/static/fcvino_dark_v2_preview.html

@@ -16,7 +16,6 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -27,7 +26,7 @@ from bot.football_api import FootballAPI
 from .deps import WEB_ROOT, LoginRequired, redirect_to_login
 from .queries import IndexCache
 from .routes import auth as auth_routes
-from .routes import football, trips, wine
+from .routes import football, home, trips, wine
 
 log = logging.getLogger(__name__)
 
@@ -69,13 +68,10 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         return redirect_to_login(request, exc.next_url)
 
     app.include_router(auth_routes.router)
+    app.include_router(home.router)
     app.include_router(wine.router)
     app.include_router(trips.router)
     app.include_router(football.router)
-
-    @app.get("/")
-    async def home():
-        return RedirectResponse("/wine")
 
     return app
 
