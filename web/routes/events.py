@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
+from bot.db import utcnow_iso
+
 from .. import queries
 from ..deps import Cfg, Db, LoggedIn, Member, page
 
@@ -51,14 +53,9 @@ def _to_utc(local: str, tz: ZoneInfo) -> str | None:
         return None
 
 
-def _now() -> str:
-    """This instant, in the shape `starts_at` is stored, so the two compare."""
-    return datetime.now(ZoneInfo("UTC")).isoformat(timespec="seconds")
-
-
 def _listing(request: Request, db: Db, *, error: str | None = None, status: int = 200):
     """The page itself. Shared so a rejected form comes back with its own page."""
-    now = _now()
+    now = utcnow_iso()
     rows = queries.events(db)
     return page(
         request,
@@ -114,7 +111,7 @@ async def detail(request: Request, db: Db, _: LoggedIn, event_id: int):
         "events/detail.html",
         event=row,
         wines=queries.event_wines(db, event_id),
-        now=_now(),
+        now=utcnow_iso(),
         error=None,
     )
 
@@ -178,7 +175,7 @@ async def add_wine(
             "events/detail.html",
             event=row,
             wines=queries.event_wines(db, event_id),
-            now=_now(),
+            now=utcnow_iso(),
             error="A bottle needs a name.",
             status_code=400,
         )

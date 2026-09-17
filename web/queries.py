@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 
 from bot import trip_stats, wine_stats
-from bot.db import Database
+from bot.db import Database, utcnow_iso
 
 from .search import Index, Row
 
@@ -220,6 +220,21 @@ def events(db: Database) -> list[sqlite3.Row]:
         """SELECT e.*, COUNT(w.id) AS wines
            FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
            GROUP BY e.id ORDER BY e.starts_at"""
+    )
+
+
+def upcoming_events(db: Database, limit: int = 4) -> list[sqlite3.Row]:
+    """The next few evenings, soonest first.
+
+    `utcnow_iso()` is already the shape `starts_at` is stored in, so the two
+    compare as text without parsing either.
+    """
+    return db.query(
+        """SELECT e.*, COUNT(w.id) AS wines
+           FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
+           WHERE e.starts_at >= ?
+           GROUP BY e.id ORDER BY e.starts_at LIMIT ?""",
+        (utcnow_iso(), limit),
     )
 
 

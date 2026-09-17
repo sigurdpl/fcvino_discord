@@ -11,6 +11,7 @@ router = APIRouter()
 
 TOP_WINES = 5
 RECENT = 4
+UPCOMING = 4
 
 
 @router.get("/")
@@ -26,6 +27,7 @@ async def index(request: Request, db: Db, _: LoggedIn):
         grounds=trips["grounds"],
         cities=trips["cities"],
         countries=trips["countries"],
+        upcoming=queries.upcoming_events(db, UPCOMING),
         recent=queries.recent_activity(db, RECENT),
         top=queries.top_wines(db, TOP_WINES),
     )

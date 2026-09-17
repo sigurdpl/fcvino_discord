@@ -833,3 +833,40 @@ def test_an_evening_is_filed_under_whoever_registered_it(behind_access, cellar):
     behind_access.post("/events", headers=ACCESS_HEADER,
                        data={"theme": "Named", "starts_at": SOON})
     assert only_event(cellar)["created_by"] == "Morten"
+
+
+# -- the home page's upcoming panel -----------------------------------------
+
+
+def test_the_home_page_shows_what_is_coming_up(signed_in):
+    make_event(signed_in, theme="Moden Piemonte")
+    page = signed_in.get("/").text
+    assert "Upcoming" in page
+    assert "Moden Piemonte" in page
+
+
+def test_an_evening_already_held_is_not_upcoming(signed_in):
+    make_event(signed_in, when=GONE, theme="Long gone")
+    assert "Long gone" not in signed_in.get("/").text
+
+
+def test_only_the_next_four_evenings_are_listed(signed_in):
+    for month in range(1, 6):          # five evenings, registered out of order
+        make_event(signed_in, when=f"2099-{6 - month:02d}-01T19:00",
+                   theme=f"Evening {6 - month}")
+    page = signed_in.get("/").text
+    shown = [n for n in range(1, 6) if f"Evening {n}" in page]
+    assert shown == [1, 2, 3, 4], "the four soonest, and not the fifth"
+    assert page.index("Evening 1") < page.index("Evening 4"), "soonest first"
+
+
+def test_an_empty_diary_says_so_and_points_at_the_page(signed_in):
+    page = signed_in.get("/").text
+    assert "Nothing in the diary" in page
+    assert "Register an evening" in page
+
+
+def test_the_map_of_where_we_have_been_is_gone(signed_in):
+    page = signed_in.get("/").text
+    assert "Where we have been" not in page
+    assert "fv-map" not in page
