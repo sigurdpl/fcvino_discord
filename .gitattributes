@@ -1,8 +1,8 @@
-# Images live in Git LFS — see the setup note in README.md. SVG is deliberately
-# absent: it is text, and it should keep diffing like text.
-*.jpg  filter=lfs diff=lfs merge=lfs -text
-*.jpeg filter=lfs diff=lfs merge=lfs -text
-*.png  filter=lfs diff=lfs merge=lfs -text
-*.gif  filter=lfs diff=lfs merge=lfs -text
-*.webp filter=lfs diff=lfs merge=lfs -text
-*.ico  filter=lfs diff=lfs merge=lfs -text
+# Deliberately empty of LFS rules.
+#
+# Images used to be tracked here through Git LFS. They are not tracked at all
+# any more — see the club-pictures block in .gitignore for why — and an LFS rule
+# for files git never sees is only a way to mislead the next person reading it.
+#
+# The rules are still in the older commits that need them, so a checkout of that
+# history resolves its pointers as it always did.

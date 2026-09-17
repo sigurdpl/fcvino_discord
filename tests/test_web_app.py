@@ -620,3 +620,14 @@ def test_the_bot_and_the_web_agree_on_what_qualifies(cellar):
     from bot import wine_stats
     from bot.cogs.wine import MIN_RATINGS_FOR_BOARD
     assert MIN_RATINGS_FOR_BOARD is wine_stats.MIN_RATINGS
+
+
+def test_the_masthead_says_its_name_without_the_logo_file(signed_in):
+    """The pictures are not in the repository, so the bar cannot depend on one.
+
+    A CSS background with transparent text leaves a checkout without the logo
+    showing nothing at all where the club's name should be; an <img> falls back
+    to its alt text on its own.
+    """
+    page = signed_in.get("/wine").text
+    assert re.search(r'class="brand"[^>]*>\s*<img [^>]*alt="FC Vino"', page)

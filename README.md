@@ -67,11 +67,13 @@ Only you can do this part — it needs your Discord account and Manage Server on
 
 ## 2. Run it
 
-The repo keeps its images in [Git LFS](https://git-lfs.com). Install it once —
-`brew install git-lfs && git lfs install` — **before** cloning. If you have already
-cloned without it, `git lfs pull` swaps the pointer files for the real ones; the
-giveaway is `web/static/cover.jpg` arriving as a line of text and the site's cover
-header rendering broken.
+**The club's pictures are not in the repository** — the wordmark, the photographs
+of us, the artwork on the home page. This repo is public and they are not, so
+they live in `web/static/` on the machine that serves the site and are passed
+around by hand. A clone without them is not broken: every photograph has a
+gradient under it and the wordmark falls back to its own name, so the page comes
+out as the design minus the photography. If you want the real thing locally, ask
+for the files and drop them in `web/static/`.
 
 Pick either environment — conda is what this machine uses.
 

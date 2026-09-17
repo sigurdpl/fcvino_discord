@@ -360,3 +360,18 @@ button.quiet:hover { background: var(--line); }
   width: 100%; aspect-ratio: 16/9; display: block;
   background: var(--surface-2) center/cover no-repeat;
 }
+
+/* The wordmark carries its own fallback: an <img> shows its alt text when the
+   file is absent, where a background image would leave the bar blank — and the
+   club's pictures are not in the repository, so absent is a normal state. This
+   supersedes the background in .brand above rather than editing it. */
+.brand {
+  background: none;
+  width: auto;
+  height: auto;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.15rem;
+  letter-spacing: .01em;
+}
+.brand img { display: block; height: 2.2rem; width: auto; }

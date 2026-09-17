@@ -8,7 +8,10 @@
   <div class="fv-hero-photo group"></div>
   <div class="fv-hero-photo stadium"></div>
   <div class="fv-hero-content">
-    <img class="fv-logo" src="/static/fcvino-logo.png" alt="FC Vino">
+    {#- The title below says the same thing at four times the size, so where the
+        wordmark is missing this simply steps aside. -#}
+    <img class="fv-logo" src="/static/fcvino-logo.png" alt="FC Vino"
+         onerror="this.style.display='none'">
     <div class="fv-eyebrow">
       Football · Wine · Friendship{% if since %} · Since {{ since }}{% endif %}
     </div>
