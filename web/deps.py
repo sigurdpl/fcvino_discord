@@ -23,6 +23,27 @@ WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 
+def static_url(name: str) -> str:
+    """`/static/<name>` with a version stamp taken from the file itself.
+
+    The markup and the stylesheet are deployed together but cached apart, so a
+    browser — or Cloudflare, which sits in front of the tunnel — can hold an old
+    stylesheet against new HTML. That is not a cosmetic mismatch: it has already
+    produced a page with the wordmark drawn twice and four images collapsed to
+    nothing, because each of those depends on a rule the old sheet lacked.
+
+    Stamping the URL means a changed file is a different URL, so no cache can
+    serve the stale one. Read per render rather than at startup, because
+    `--reload` restarts on Python changes and not on CSS ones.
+    """
+    path = WEB_ROOT / "static" / name
+    try:
+        stamp = f"{path.stat().st_mtime_ns:x}"[-8:]
+    except OSError:
+        return f"/static/{name}"      # absent is normal: the club's pictures
+    return f"/static/{name}?v={stamp}"
+
+
 def fmt_score(value: float | None, places: int = 1) -> str:
     return "—" if value is None else f"{value:.{places}f}"
 
@@ -42,6 +63,7 @@ templates.env.filters["score"] = fmt_score
 templates.env.globals["fmt_month"] = fmt_month
 templates.env.globals["initials"] = initials
 templates.env.globals["avatar_colour"] = colour
+templates.env.globals["static"] = static_url
 
 
 class LoginRequired(Exception):

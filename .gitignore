@@ -20,10 +20,16 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Club photographs. The repository is public and these show the nine of us by
-# name and face, so they are shared out of band and live only on the server.
-# The stylesheet layers a gradient under every one of them, so a checkout
-# without them renders as a design rather than as broken images.
-web/static/fcvino-*.jpg
+# The club's own pictures: the wordmark, the photographs of us, the artwork.
+# None of them belong in a public repository, so none of them are in it — they
+# live on the machine that serves the site, which is the only one that needs
+# them. A checkout without them is not broken: the stylesheet lays a gradient
+# under every photograph and the wordmark falls back to its own name, so the
+# page renders as the design without the photography.
+web/static/*.png
+web/static/*.jpg
+web/static/*.jpeg
+web/static/*.gif
+web/static/*.webp
 # Robert's mockup carries the same photographs base64'd inside it.
 web/static/fcvino_dark_v2_preview.html

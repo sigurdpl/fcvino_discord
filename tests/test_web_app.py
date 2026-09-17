@@ -8,6 +8,7 @@ schema has to show up here as a failure.
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 
 import pytest
@@ -620,3 +621,47 @@ def test_the_bot_and_the_web_agree_on_what_qualifies(cellar):
     from bot import wine_stats
     from bot.cogs.wine import MIN_RATINGS_FOR_BOARD
     assert MIN_RATINGS_FOR_BOARD is wine_stats.MIN_RATINGS
+
+
+def test_the_masthead_says_its_name_without_the_logo_file(signed_in):
+    """The pictures are not in the repository, so the bar cannot depend on one.
+
+    A CSS background with transparent text leaves a checkout without the logo
+    showing nothing at all where the club's name should be; an <img> falls back
+    to its alt text on its own.
+    """
+    page = signed_in.get("/wine").text
+    assert re.search(r'class="brand"[^>]*>\s*<img [^>]*alt="FC Vino"', page)
+
+
+def test_the_stylesheet_url_is_stamped_with_the_files_version(signed_in):
+    """Markup and stylesheet ship together but cache apart.
+
+    A browser holding yesterday's CSS against today's HTML is not a cosmetic
+    mismatch: it has already drawn the wordmark twice and collapsed four images
+    to nothing. A stamped URL means the old file cannot be served for the new
+    page, so the two can never disagree.
+    """
+    page = signed_in.get("/wine").text
+    assert re.search(r'href="/static/style_dark2\.css\?v=[0-9a-f]+"', page)
+    assert re.search(r'src="/static/htmx\.min\.js\?v=[0-9a-f]+"', page)
+
+
+def test_the_stamp_follows_the_file(signed_in, tmp_path):
+    """Touching the stylesheet has to change the URL, or it buys nothing."""
+    from web import deps
+    before = deps.static_url("style_dark2.css")
+    sheet = deps.WEB_ROOT / "static" / "style_dark2.css"
+    original = sheet.stat()
+    try:
+        os.utime(sheet, ns=(original.st_atime_ns, original.st_mtime_ns + 1_000_000_000))
+        assert deps.static_url("style_dark2.css") != before
+    finally:
+        os.utime(sheet, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert deps.static_url("style_dark2.css") == before
+
+
+def test_a_missing_static_file_still_yields_a_usable_url(signed_in):
+    """The club's pictures are legitimately absent elsewhere; don't raise."""
+    from web import deps
+    assert deps.static_url("not-here.png") == "/static/not-here.png"

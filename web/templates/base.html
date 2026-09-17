@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1b2a42">
   <title>{% block title %}FC Vino{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style_dark2.css">
+  <link rel="stylesheet" href="{{ static('style_dark2.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🍷</text></svg>">
-  <script src="/static/htmx.min.js" defer></script>
+  <script src="{{ static('htmx.min.js') }}" defer></script>
 </head>
 <body>
 
@@ -15,7 +15,12 @@
 {% set on_cellar = path == '/wine' or (path.startswith('/wine/') and '/boards' not in path and '/tastings' not in path) %}
 
 <header class="bar">
-  <a class="brand" href="/">🍷 FC&nbsp;Vino</a>
+  {#- An <img> rather than a CSS background, because a background that fails to
+      load leaves the bar empty. Where the wordmark is missing — it is not in the
+      repository — the image stands down and the club's name takes its place,
+      rather than the browser drawing a broken picture beside the alt text. -#}
+  <a class="brand" href="/"><img src="/static/fcvino-logo.png" alt="FC Vino"
+       onerror="this.outerHTML='FC&amp;nbsp;Vino'"></a>
   <span class="who">
     {% if member_name %}
       <span class="avatar sm" style="background: {{ avatar_colour(member_name) }}"
