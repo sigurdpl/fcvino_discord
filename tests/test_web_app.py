@@ -102,7 +102,7 @@ def signed_in(client):
     return client
 
 
-PAGES = ["/", "/wine", "/wine/boards", "/wine/tastings", "/wine/tastings/1", "/wine/1",
+PAGES = ["/", "/events", "/wine", "/wine/boards", "/wine/tastings", "/wine/tastings/1", "/wine/1",
          "/trips", "/trips/2024", "/football"]
 
 
@@ -665,3 +665,171 @@ def test_a_missing_static_file_still_yields_a_usable_url(signed_in):
     """The club's pictures are legitimately absent elsewhere; don't raise."""
     from web import deps
     assert deps.static_url("not-here.png") == "/static/not-here.png"
+
+
+# -- events: the evenings we have not held yet ------------------------------
+#
+# The app's first write path, so these check that a write happened *and* that a
+# rejected one left nothing behind.
+
+SOON = "2099-10-12T19:00"
+GONE = "2020-03-05T19:00"
+
+
+def make_event(client, when=SOON, theme="Moden Piemonte", **extra):
+    data = {"theme": theme, "starts_at": when, "location": "Thomas's", "host": "Morten"}
+    return client.post("/events", data={**data, **extra}, follow_redirects=False)
+
+
+def only_event(db):
+    rows = db.query("SELECT * FROM events")
+    assert len(rows) == 1, f"expected one event, found {len(rows)}"
+    return rows[0]
+
+
+def test_registering_an_evening_puts_it_in_the_diary(signed_in, cellar):
+    response = make_event(signed_in)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/events"
+    row = only_event(cellar)
+    assert row["theme"] == "Moden Piemonte"
+    assert row["location"] == "Thomas's"
+    assert row["host"] == "Morten"
+    assert "Moden Piemonte" in signed_in.get("/events").text
+
+
+def test_the_evening_is_stored_as_the_instant_not_the_wall_clock(signed_in, cellar):
+    """19:00 in Oslo in October is 17:00 UTC — stored UTC, shown local."""
+    make_event(signed_in)
+    assert only_event(cellar)["starts_at"].startswith("2099-10-12T17:00")
+    assert "19:00" in signed_in.get("/events").text
+
+
+def test_an_evening_needs_a_theme(signed_in, cellar):
+    response = make_event(signed_in, theme="   ")
+    assert response.status_code == 400
+    assert "needs a theme" in response.text
+    assert cellar.query("SELECT * FROM events") == []
+
+
+def test_an_unreadable_date_writes_nothing(signed_in, cellar):
+    response = make_event(signed_in, when="whenever")
+    assert response.status_code == 400
+    assert cellar.query("SELECT * FROM events") == []
+
+
+def test_editing_an_evening_changes_it(signed_in, cellar):
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}", data={
+        "theme": "Barolo instead", "starts_at": "2099-11-01T18:30",
+        "location": "Erk's", "host": "Tore",
+    })
+    row = only_event(cellar)
+    assert row["theme"] == "Barolo instead"
+    assert row["location"] == "Erk's"
+    assert row["starts_at"].startswith("2099-11-01T17:30")
+
+
+def test_deleting_an_evening_takes_its_wines_with_it(signed_in, cellar):
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Produttori 2019"})
+    assert cellar.query("SELECT * FROM event_wines") != []
+
+    signed_in.post(f"/events/{event_id}/delete")
+    assert cellar.query("SELECT * FROM events") == []
+    assert cellar.query("SELECT * FROM event_wines") == [], "ON DELETE CASCADE"
+
+
+def test_a_bottle_can_be_lined_up_with_the_cellar_s_details(signed_in, cellar):
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={
+        "name": "Produttori del Barbaresco", "producer": "Produttori",
+        "vintage": "2019", "country": "Italy", "region": "Barbaresco",
+        "grape": "Nebbiolo", "price_nok": "420", "brought_by": "Thomas",
+    })
+    (wine,) = cellar.query("SELECT * FROM event_wines")
+    assert wine["name"] == "Produttori del Barbaresco"
+    assert wine["vintage"] == 2019
+    assert wine["price_nok"] == 420
+    assert wine["grape"] == "Nebbiolo"
+    assert "Produttori del Barbaresco" in signed_in.get(f"/events/{event_id}").text
+
+
+def test_a_bottle_needs_a_name(signed_in, cellar):
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    response = signed_in.post(f"/events/{event_id}/wines", data={"name": " "})
+    assert response.status_code == 400
+    assert cellar.query("SELECT * FROM event_wines") == []
+
+
+def test_a_bottle_cannot_be_removed_from_another_evening(signed_in, cellar):
+    """The event id is in the WHERE, so a stray id reaches nothing."""
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Stays put"})
+    (wine,) = cellar.query("SELECT * FROM event_wines")
+
+    signed_in.post(f"/events/{event_id + 99}/wines/{wine['id']}/delete")
+    assert cellar.query("SELECT * FROM event_wines") != []
+
+
+def test_a_planned_evening_is_not_counted_as_one_we_held(signed_in, cellar):
+    """The whole reason events are their own table: the cellar's headline
+    numbers must keep meaning what we actually drank."""
+    from web import queries
+    before = dict(queries.cellar_totals(cellar))
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Not drunk yet"})
+    assert dict(queries.cellar_totals(cellar)) == before
+
+
+def test_a_held_evening_moves_into_the_archive(signed_in, cellar):
+    make_event(signed_in, when=GONE, theme="Sørlige Rhône")
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={
+        "name": "Dom. Santa Duc", "vintage": "2019", "brought_by": "Morten",
+    })
+    signed_in.post(f"/events/{event_id}/promote")
+
+    (tasting,) = cellar.query("SELECT * FROM tastings WHERE theme = 'Sørlige Rhône'")
+    assert (tasting["year"], tasting["month"]) == (2020, 3)
+    (wine,) = cellar.query("SELECT * FROM wines WHERE tasting_id = ?", (tasting["id"],))
+    assert wine["name"] == "Dom. Santa Duc"
+    assert wine["brought_by"] == "Morten"
+    assert only_event(cellar)["tasting_id"] == tasting["id"]
+
+
+def test_an_evening_cannot_be_archived_twice(signed_in, cellar):
+    make_event(signed_in, when=GONE, theme="Sørlige Rhône")
+    event_id = only_event(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Dom. Santa Duc"})
+    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/promote")
+
+    assert len(cellar.query("SELECT * FROM tastings WHERE theme = 'Sørlige Rhône'")) == 1
+    assert len(cellar.query("SELECT * FROM wines WHERE name = 'Dom. Santa Duc'")) == 1
+
+
+def test_an_evening_still_to_come_offers_no_archive_button(signed_in, cellar):
+    make_event(signed_in)
+    event_id = only_event(cellar)["id"]
+    assert "Move to the archive" not in signed_in.get(f"/events/{event_id}").text
+
+
+def test_writing_an_event_needs_a_login(client, cellar):
+    client.post("/events", data={"theme": "Sneaky", "starts_at": SOON},
+                follow_redirects=False)
+    assert cellar.query("SELECT * FROM events") == []
+
+
+def test_an_evening_is_filed_under_whoever_registered_it(behind_access, cellar):
+    """Behind Access the gate is also what claims the name, so the author must
+    be read after it — on a session's first request, not before."""
+    behind_access.post("/events", headers=ACCESS_HEADER,
+                       data={"theme": "Named", "starts_at": SOON})
+    assert only_event(cellar)["created_by"] == "Morten"

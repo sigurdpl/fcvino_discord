@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from bot.config import Config
-from bot.db import Database
+from bot.db import Database, parse_utc
 
 from . import access, auth
 from .avatars import colour, initials
@@ -59,8 +60,36 @@ def fmt_month(year: int | None, month: int | None) -> str:
     return f"{names[month - 1]} {year}"
 
 
+def fmt_when(stamp: str | None, tz: str = "Europe/Oslo") -> str:
+    """A stored UTC instant as the evening it is locally: 'Sat 12 Oct, 19:00'.
+
+    Instants are stored in UTC throughout, as `bot/db.py` says; the club reads
+    them in its own time, which is the same split `bot/formatting.local_day`
+    already makes for kickoffs.
+    """
+    if not stamp:
+        return "—"
+    try:
+        when = parse_utc(stamp).astimezone(ZoneInfo(tz))
+    except (ValueError, ZoneInfoNotFoundError):
+        return stamp
+    return f"{when:%a} {when.day} {when:%B}, {when:%H:%M}"
+
+
+def fmt_local_input(stamp: str | None, tz: str = "Europe/Oslo") -> str:
+    """The same instant as a <input type="datetime-local"> wants it."""
+    if not stamp:
+        return ""
+    try:
+        return parse_utc(stamp).astimezone(ZoneInfo(tz)).strftime("%Y-%m-%dT%H:%M")
+    except (ValueError, ZoneInfoNotFoundError):
+        return ""
+
+
 templates.env.filters["score"] = fmt_score
 templates.env.globals["fmt_month"] = fmt_month
+templates.env.globals["fmt_when"] = fmt_when
+templates.env.globals["fmt_local_input"] = fmt_local_input
 templates.env.globals["initials"] = initials
 templates.env.globals["avatar_colour"] = colour
 templates.env.globals["static"] = static_url
@@ -180,7 +209,22 @@ def safe_path(url: str | None, host: str | None = None, fallback: str = "/wine")
 
 # Annotated dependencies rather than `= Depends(...)` defaults: the same wiring,
 # but it reads as a type and keeps a function call out of a default argument.
+def get_member(
+    request: Request, _: Annotated[None, Depends(require_login)]
+) -> tuple[int, str] | None:
+    """Who this session says it is, or None — being signed in does not require
+    having said, so a handler recording an author must cope with both.
+
+    It depends on the gate rather than sitting beside it because behind
+    Cloudflare Access the gate is also what *claims* the name, from the vouched
+    address. Read in parallel with it, the session's very first request would
+    find nobody there and file the evening under no one.
+    """
+    return auth.current_member(request)
+
+
 Db = Annotated[Database, Depends(get_db)]
 Cfg = Annotated[Config, Depends(get_config)]
 WineIndex = Annotated[Index, Depends(get_index)]
 LoggedIn = Annotated[None, Depends(require_login)]
+Member = Annotated["tuple[int, str] | None", Depends(get_member)]

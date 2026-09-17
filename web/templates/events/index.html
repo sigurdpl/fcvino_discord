@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Events · FC Vino{% endblock %}
+{% block body %}
+
+<section class="card">
+  <h1>Events</h1>
+  <p class="muted">The evenings still to come, and what we are opening at them.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  {#- Folded away by default: the page is for reading most of the time, and
+      registering an evening is the rarer thing. -#}
+  <details class="filters" {{ 'open' if error }}>
+    <summary>Register an evening</summary>
+    <form method="post" action="/events">
+      <div class="grid">
+        <label>Theme
+          <input name="theme" placeholder="Moden Piemonte" required>
+        </label>
+        <label>When
+          <input type="datetime-local" name="starts_at" required>
+        </label>
+        <label>Where
+          <input name="location" placeholder="Thomas's">
+        </label>
+        <label>Responsible
+          <select name="host">
+            <option value="">— nobody yet —</option>
+            {% for m in members or [] %}<option value="{{ m['name'] }}">{{ m['name'] }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <button type="submit">Register</button>
+    </form>
+  </details>
+</section>
+
+<section class="card">
+  <h2>Coming up</h2>
+  <div class="scroll">
+    <table class="rows">
+      <thead>
+        <tr>
+          <th>When</th><th>Theme</th><th>Where</th><th>Responsible</th>
+          <th class="num">Wines</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in upcoming %}
+        <tr>
+          <td class="nowrap">{{ fmt_when(e['starts_at']) }}</td>
+          <td><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></td>
+          <td class="muted">{{ e['location'] or '—' }}</td>
+          <td class="muted">{{ e['host'] or '—' }}</td>
+          <td class="num">{{ e['wines'] }}</td>
+          <td class="nowrap">{% include "events/_actions.html" %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">Nothing in the diary. Register one above.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if past %}
+<section class="card">
+  <h2>Been and gone</h2>
+  <div class="scroll">
+    <table class="rows">
+      <thead>
+        <tr>
+          <th>When</th><th>Theme</th><th>Where</th><th>Responsible</th>
+          <th class="num">Wines</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in past %}
+        <tr>
+          <td class="nowrap">{{ fmt_when(e['starts_at']) }}</td>
+          <td><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></td>
+          <td class="muted">{{ e['location'] or '—' }}</td>
+          <td class="muted">{{ e['host'] or '—' }}</td>
+          <td class="num">{{ e['wines'] }}</td>
+          <td class="nowrap">
+            {% if e['tasting_id'] %}<span class="pill">in the archive</span>{% endif %}
+            {% include "events/_actions.html" %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

@@ -211,6 +211,29 @@ def member_ratings(db: Database, member_id: int, limit: int = 100) -> list[sqlit
     )
 
 
+# -- events -----------------------------------------------------------------
+
+
+def events(db: Database) -> list[sqlite3.Row]:
+    """Every planned evening, soonest first, with its bottle count."""
+    return db.query(
+        """SELECT e.*, COUNT(w.id) AS wines
+           FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
+           GROUP BY e.id ORDER BY e.starts_at"""
+    )
+
+
+def event(db: Database, event_id: int) -> sqlite3.Row | None:
+    return db.query_one("SELECT * FROM events WHERE id = ?", (event_id,))
+
+
+def event_wines(db: Database, event_id: int) -> list[sqlite3.Row]:
+    return db.query(
+        "SELECT * FROM event_wines WHERE event_id = ? ORDER BY position, id",
+        (event_id,),
+    )
+
+
 # -- trips ------------------------------------------------------------------
 
 

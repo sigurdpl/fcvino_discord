@@ -16,7 +16,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 -- `brought_by` is per wine, not per tasting: at a bring-your-own night every
@@ -76,6 +76,47 @@ CREATE TABLE IF NOT EXISTS tastings (
     added_at TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tastings_when ON tastings(year, month);
+
+-- An evening we have not held yet. Deliberately not a row in `tastings`: that
+-- table knows a year and a month and no day or time, its unique key would
+-- collide for two evenings a month apart on the same theme, and — the reason
+-- that decides it — `tastings` is counted everywhere as "evenings we held". A
+-- planned one in there would quietly make the cellar's headline numbers wrong.
+--
+-- `starts_at` is UTC, like every other instant here; the web app converts to
+-- Europe/Oslo for display. `tasting_id` is null until the evening is promoted
+-- into the archive, and stamped afterwards so it cannot be promoted twice.
+CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    theme      TEXT    NOT NULL,
+    location   TEXT,
+    host       TEXT,
+    starts_at  TEXT    NOT NULL,
+    notes      TEXT,
+    tasting_id INTEGER REFERENCES tastings(id) ON DELETE SET NULL,
+    created_by TEXT,
+    created_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_when ON events(starts_at);
+
+-- The bottles lined up for an evening. The columns mirror `wines` so that
+-- promoting an event is a copy rather than a translation, and so "the details
+-- we keep" means the same thing before and after the cork comes out.
+CREATE TABLE IF NOT EXISTS event_wines (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    name       TEXT    NOT NULL,
+    producer   TEXT,
+    vintage    INTEGER,
+    country    TEXT,
+    region     TEXT,
+    grape      TEXT,
+    price_nok  INTEGER,
+    brought_by TEXT,
+    position   INTEGER,
+    added_at   TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_wines_event ON event_wines(event_id);
 
 CREATE TABLE IF NOT EXISTS members (
     user_id            INTEGER PRIMARY KEY,
@@ -613,6 +654,113 @@ class Database:
             rows,
         )
         return len(rows)
+
+    # -- events: the evenings we have not held yet -------------------------
+
+    def create_event(
+        self,
+        *,
+        theme: str,
+        starts_at: str,
+        location: str | None = None,
+        host: str | None = None,
+        notes: str | None = None,
+        created_by: str | None = None,
+    ) -> int:
+        """Put a planned evening in the diary, returning its id."""
+        return self.execute(
+            """INSERT INTO events (theme, location, host, starts_at, notes,
+                                   created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (theme, location, host, starts_at, notes, created_by, utcnow_iso()),
+        )
+
+    def update_event(self, event_id: int, **fields: Any) -> None:
+        """Amend an evening. Only the columns passed are touched.
+
+        `None` means "leave it alone" rather than "clear it", the same reading
+        `upsert_trip` gives it, so correcting the time cannot wipe the notes.
+        Clearing a field is done by passing an empty string.
+        """
+        allowed = ("theme", "location", "host", "starts_at", "notes")
+        changes = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if not changes:
+            return
+        assignments = ", ".join(f"{column}=?" for column in changes)
+        self.execute(
+            f"UPDATE events SET {assignments} WHERE id=?",
+            (*(v or None for v in changes.values()), event_id),
+        )
+
+    def delete_event(self, event_id: int) -> None:
+        """Drop an evening. Its wine list goes with it, by ON DELETE CASCADE."""
+        self.execute("DELETE FROM events WHERE id=?", (event_id,))
+
+    def add_event_wine(self, event_id: int, *, name: str, **fields: Any) -> int:
+        """Line a bottle up for an evening, at the end of the list."""
+        columns = ("producer", "vintage", "country", "region", "grape",
+                   "price_nok", "brought_by")
+        values = [fields.get(column) for column in columns]
+        seat = self.query_one(
+            "SELECT COALESCE(MAX(position), 0) + 1 AS next FROM event_wines WHERE event_id=?",
+            (event_id,),
+        )
+        return self.execute(
+            f"""INSERT INTO event_wines (event_id, name, {", ".join(columns)},
+                                         position, added_at)
+                VALUES (?, ?, {", ".join("?" * len(columns))}, ?, ?)""",
+            (event_id, name, *values, seat["next"], utcnow_iso()),
+        )
+
+    def delete_event_wine(self, event_id: int, wine_id: int) -> None:
+        """The event id is in the WHERE too, so a stray id cannot reach another
+        evening's list."""
+        self.execute(
+            "DELETE FROM event_wines WHERE id=? AND event_id=?", (wine_id, event_id)
+        )
+
+    def promote_event(self, event_id: int) -> int | None:
+        """Move a held evening into the archive, returning the tasting's id.
+
+        The wines become ordinary cellar rows against the new tasting, which is
+        what lets them be scored later with the same `wine_ratings` table the
+        club's whole history already lives in. `added_by` is the import
+        sentinel: a visitor to the web app has no Discord id.
+
+        Returns None if the evening has already been promoted, so pressing the
+        button twice cannot leave two copies in the archive.
+        """
+        event = self.query_one("SELECT * FROM events WHERE id=?", (event_id,))
+        if event is None or event["tasting_id"] is not None:
+            return None
+
+        when = parse_utc(event["starts_at"])
+        theme = (event["theme"] or "").strip()
+        key = f"{when.year}-{when.month:02d}|{theme.lower()}"
+        self.execute(
+            """INSERT INTO tastings (key, year, month, theme, location, host, added_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET
+                   location=COALESCE(excluded.location, tastings.location),
+                   host=COALESCE(excluded.host, tastings.host)""",
+            (key, when.year, when.month, theme or None, event["location"],
+             event["host"], utcnow_iso()),
+        )
+        tasting_id = self.query_one("SELECT id FROM tastings WHERE key=?", (key,))["id"]
+
+        for wine in self.query(
+            "SELECT * FROM event_wines WHERE event_id=? ORDER BY position, id", (event_id,)
+        ):
+            self.execute(
+                """INSERT INTO wines (name, producer, vintage, country, region, grape,
+                                      price_nok, tasting_id, brought_by, added_by, added_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                (wine["name"], wine["producer"], wine["vintage"], wine["country"],
+                 wine["region"], wine["grape"], wine["price_nok"], tasting_id,
+                 wine["brought_by"], utcnow_iso()),
+            )
+        self.execute("UPDATE events SET tasting_id=? WHERE id=?", (tasting_id, event_id))
+        return tasting_id
 
     # -- trips archive -----------------------------------------------------
 

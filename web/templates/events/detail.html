@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}{{ event['theme'] }} · FC Vino{% endblock %}
+{% block body %}
+
+<section class="card">
+  <p class="crumb"><a href="/events">← the diary</a></p>
+  <h1>{{ event['theme'] }}</h1>
+  <p class="muted">
+    {{ fmt_when(event['starts_at']) }}
+    {%- if event['location'] %} · at {{ event['location'] }}{% endif %}
+    {%- if event['host'] %} · {{ event['host'] }} is responsible{% endif %}
+  </p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <details class="filters">
+    <summary>Change the details</summary>
+    <form method="post" action="/events/{{ event['id'] }}">
+      <div class="grid">
+        <label>Theme
+          <input name="theme" value="{{ event['theme'] }}" required>
+        </label>
+        <label>When
+          <input type="datetime-local" name="starts_at"
+                 value="{{ fmt_local_input(event['starts_at']) }}" required>
+        </label>
+        <label>Where
+          <input name="location" value="{{ event['location'] or '' }}">
+        </label>
+        <label>Responsible
+          <select name="host">
+            <option value="">— nobody yet —</option>
+            {% for m in members or [] %}
+              <option value="{{ m['name'] }}" {{ 'selected' if m['name'] == event['host'] }}>{{ m['name'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <button type="submit">Save</button>
+    </form>
+  </details>
+</section>
+
+<section class="card">
+  <h2>The wines</h2>
+  <div class="scroll">
+    <table class="rows">
+      <thead>
+        <tr>
+          <th class="num">#</th><th>Wine</th><th>Origin</th>
+          <th>Brought by</th><th class="num">Price</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in wines %}
+        <tr>
+          <td class="num faint">{{ loop.index }}</td>
+          <td>
+            <span class="strong">{{ w['name'] }}</span>
+            {%- if w['vintage'] %} {{ w['vintage'] }}{% endif %}
+            {%- if w['producer'] %}<div class="muted small">{{ w['producer'] }}</div>{% endif %}
+          </td>
+          <td class="muted">
+            {{ [w['country'], w['region'], w['grape']] | select | join(' · ') or '—' }}
+          </td>
+          <td class="muted">{{ w['brought_by'] or '—' }}</td>
+          <td class="num muted">{{ w['price_nok'] or '—' }}</td>
+          <td class="nowrap">
+            <form method="post" action="/events/{{ event['id'] }}/wines/{{ w['id'] }}/delete"
+                  style="display: inline">
+              <button class="quiet" type="submit"
+                      onclick="return confirm('Take {{ w['name'] }} off the list?')">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No bottles lined up yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {#- The cellar's own fields, so a bottle needs describing once and not twice
+      when the evening moves into the archive. Only the name is required. -#}
+  <details class="filters" {{ 'open' if error }}>
+    <summary>Add a bottle</summary>
+    <form method="post" action="/events/{{ event['id'] }}/wines">
+      <div class="grid">
+        <label>Wine <input name="name" placeholder="Produttori del Barbaresco" required></label>
+        <label>Producer <input name="producer"></label>
+        <label>Vintage <input name="vintage" inputmode="numeric" placeholder="2019"></label>
+        <label>Country <input name="country"></label>
+        <label>Region <input name="region"></label>
+        <label>Grape <input name="grape"></label>
+        <label>Price (kr) <input name="price_nok" inputmode="numeric"></label>
+        <label>Brought by
+          <select name="brought_by">
+            <option value="">— nobody yet —</option>
+            {% for m in members or [] %}<option value="{{ m['name'] }}">{{ m['name'] }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <button type="submit">Add</button>
+    </form>
+  </details>
+</section>
+
+{#- Promotion is the evening's last act: the wines become ordinary cellar rows
+    against a real tasting, which is what lets them be scored. Offered only once
+    the night has happened, and only once. -#}
+{% if event['starts_at'] < now %}
+<section class="card">
+  <h2>Afterwards</h2>
+  {% if event['tasting_id'] %}
+    <p class="muted">
+      This evening is in the archive —
+      <a href="/wine/tastings/{{ event['tasting_id'] }}">see it there</a>.
+    </p>
+  {% else %}
+    <p class="muted">
+      Held, but not yet in the archive. Moving it there files its
+      {{ wines | length }} bottle{{ '' if wines | length == 1 else 's' }} in the
+      cellar, ready to be scored.
+    </p>
+    <form method="post" action="/events/{{ event['id'] }}/promote">
+      <button type="submit">Move to the archive</button>
+    </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% endblock %}
