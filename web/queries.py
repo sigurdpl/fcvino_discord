@@ -189,14 +189,16 @@ def cellar_totals(db: Database) -> sqlite3.Row | None:
         """SELECT (SELECT COUNT(*) FROM wines)         AS wines,
                   (SELECT COUNT(*) FROM wine_ratings)  AS ratings,
                   (SELECT COUNT(*) FROM tastings)      AS tastings,
-                  (SELECT COUNT(*) FROM wine_members)  AS members,
+                  (SELECT COUNT(*) FROM wine_members
+                    WHERE NOT guest)                   AS members,
                   (SELECT MIN(year) FROM tastings)     AS first_year,
                   (SELECT MAX(year) FROM tastings)     AS last_year"""
     )
 
 
 def members(db: Database) -> list[sqlite3.Row]:
-    return db.query("SELECT id, name FROM wine_members ORDER BY name")
+    """The club. Guests rated a few bottles once and are not on this list."""
+    return db.query("SELECT id, name FROM wine_members WHERE NOT guest ORDER BY name")
 
 
 def member_ratings(db: Database, member_id: int, limit: int = 100) -> list[sqlite3.Row]:

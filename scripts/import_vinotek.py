@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot import config, vinotek  # noqa: E402
-from bot.db import Database, utcnow_iso  # noqa: E402
+from bot.db import GUESTS, Database, utcnow_iso  # noqa: E402
 
 DEFAULT_WORKBOOK = Path(__file__).resolve().parent.parent / "data" / "FC Vino Vinotek.xlsx"
 
@@ -227,8 +227,12 @@ def write(db: Database, harvest: Harvest, *, dry_run: bool, reset: bool = False)
     members: dict[str, int] = {}
     for name in vinotek.MEMBERS:
         if not dry_run:
+            # The sheet records who scored what and nothing about membership,
+            # so guests would arrive looking like everybody else.
             db.execute(
-                "INSERT INTO wine_members (name) VALUES (?) ON CONFLICT(name) DO NOTHING", (name,)
+                "INSERT INTO wine_members (name, guest) VALUES (?, ?)"
+                " ON CONFLICT(name) DO UPDATE SET guest=excluded.guest",
+                (name, 1 if name in GUESTS else 0),
             )
             members[name] = db.query_one("SELECT id FROM wine_members WHERE name=?", (name,))["id"]
         counts["members"] += 1
