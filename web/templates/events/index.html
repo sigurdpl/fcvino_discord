@@ -30,8 +30,8 @@
         <label data-for="trip">Until
           <input type="datetime-local" name="ends_at">
         </label>
-        <label data-for="trip">Country
-          <input name="country" placeholder="Belgium">
+        <label>Country
+          <input name="country" value="{{ home_country }}" placeholder="Belgium">
         </label>
         <label>Where
           <input name="location" placeholder="Thomas's">
@@ -70,7 +70,7 @@
             {% if e['kind'] != 'tasting' %}<span class="pill">{{ kinds[e['kind']] }}</span>{% endif %}
           </td>
           <td class="muted">
-            {{ [e['location'], e['country']] | select | join(', ') or '—' }}
+            {{ fmt_where(e['location'], e['country']) }}
           </td>
           <td class="muted">{{ e['host'] or '—' }}</td>
           <td class="num">{{ e['wines'] or '—' }}</td>
@@ -104,7 +104,7 @@
             {% if e['kind'] != 'tasting' %}<span class="pill">{{ kinds[e['kind']] }}</span>{% endif %}
           </td>
           <td class="muted">
-            {{ [e['location'], e['country']] | select | join(', ') or '—' }}
+            {{ fmt_where(e['location'], e['country']) }}
           </td>
           <td class="muted">{{ e['host'] or '—' }}</td>
           <td class="num">{{ e['wines'] or '—' }}</td>
@@ -120,23 +120,6 @@
 </section>
 {% endif %}
 
-{#- Show only the fields the chosen kind uses. A `data-for` naming the kinds it
-    belongs to; anything unmarked always applies. Progressive: with scripting
-    off nothing is hidden and the form still works. -#}
-<script>
-(function () {
-  document.querySelectorAll('form.kinded').forEach(function (form) {
-    var select = form.querySelector('[name=kind]');
-    if (!select) return;
-    function apply() {
-      form.querySelectorAll('[data-for]').forEach(function (field) {
-        field.hidden = field.dataset.for.split(' ').indexOf(select.value) === -1;
-      });
-    }
-    select.addEventListener('change', apply);
-    apply();
-  });
-})();
-</script>
+{% include "events/_kinds.html" %}
 
 {% endblock %}

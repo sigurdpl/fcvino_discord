@@ -353,3 +353,10 @@ button.quiet:hover { background: var(--line); }
   width: 100%; aspect-ratio: 16/9; display: block;
   background: var(--surface-2) center/cover no-repeat;
 }
+
+/* `hidden` has to outrank the layout rules, or it does nothing. A class like
+   `.filters label { display: flex }` beats the browser's own
+   `[hidden] { display: none }`, so the attribute gets set and the field stays
+   on screen — which is exactly what happened to the event form's per-kind
+   fields until this rule existed. */
+[hidden] { display: none !important; }

@@ -91,11 +91,30 @@ def fmt_span(starts: str | None, ends: str | None = None,
         b = parse_utc(ends).astimezone(ZoneInfo(tz))
     except (ValueError, ZoneInfoNotFoundError, TypeError):
         return fmt_when(starts, tz)
+    # An end on the same day is an end *time* — a Julebord running 18:00 to
+    # 22:59 — and saying "28–28 January" both reads wrong and loses the part
+    # that was worth recording.
+    if a.date() == b.date():
+        return f"{fmt_when(starts, tz)}–{b:%H:%M}"
     if (a.year, a.month) == (b.year, b.month):
         return f"{a.day}–{b.day} {a:%B} {a.year}"
     if a.year == b.year:
         return f"{a.day} {a:%B} – {b.day} {b:%B} {a.year}"
     return f"{a.day} {a:%B} {a.year} – {b.day} {b:%B} {b.year}"
+
+
+# Where the club is. Every evening is held here, so the diary says nothing
+# about it and only names a country when there is something to say.
+HOME_COUNTRY = "Norway"
+
+
+def fmt_where(location: str | None, country: str | None = None) -> str:
+    """The place, as a row should read it: "Thomas's", or "Brugge, Belgium"."""
+    parts = [(location or "").strip()]
+    abroad = (country or "").strip()
+    if abroad and abroad.casefold() != HOME_COUNTRY.casefold():
+        parts.append(abroad)
+    return ", ".join(p for p in parts if p) or "—"
 
 
 def fmt_year(stamp: str | None, tz: str = "Europe/Oslo") -> str:
@@ -123,6 +142,8 @@ templates.env.globals["fmt_month"] = fmt_month
 templates.env.globals["fmt_when"] = fmt_when
 templates.env.globals["fmt_span"] = fmt_span
 templates.env.globals["fmt_year"] = fmt_year
+templates.env.globals["fmt_where"] = fmt_where
+templates.env.globals["home_country"] = HOME_COUNTRY
 templates.env.globals["fmt_local_input"] = fmt_local_input
 templates.env.globals["initials"] = initials
 templates.env.globals["avatar_colour"] = colour

@@ -84,8 +84,8 @@
           <div class="type">{{ fmt_span(e['starts_at'], e['ends_at']) }}</div>
           <div class="name"><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></div>
           <div class="meta">
-            {%- set where = [e['location'], e['country']] | select | join(', ') -%}
-            {%- if where %}{{ where }}{% endif -%}
+            {%- set where = fmt_where(e['location'], e['country']) -%}
+            {%- if where != '—' %}{{ where }}{% endif -%}
             {%- if e['kind'] in ('tasting', 'blind') %}
               {%- if where %} · {% endif -%}
               {{ e['wines'] }} bottle{{ '' if e['wines'] == 1 else 's' }} lined up

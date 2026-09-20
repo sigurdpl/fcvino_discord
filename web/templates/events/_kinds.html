@@ -1,0 +1,26 @@
+{#- Show only the fields the chosen kind uses. A `data-for` naming the kinds it
+    belongs to; anything unmarked always applies. Progressive: with scripting
+    off nothing is hidden and the form still works. -#}
+<script>
+(function () {
+  document.querySelectorAll('form.kinded').forEach(function (form) {
+    var select = form.querySelector('[name=kind]');
+    if (!select) return;
+    var home = {{ home_country | tojson }};
+    var country = form.querySelector('[name=country]');
+    function apply() {
+      form.querySelectorAll('[data-for]').forEach(function (field) {
+        field.hidden = field.dataset.for.split(' ').indexOf(select.value) === -1;
+      });
+      // Every evening is held at home and no trip is, so the default follows
+      // the kind — but only while the box still holds the default or nothing.
+      // A country somebody actually typed is never touched.
+      if (!country) return;
+      if (select.value === 'trip' && country.value === home) country.value = '';
+      if (select.value !== 'trip' && country.value === '') country.value = home;
+    }
+    select.addEventListener('change', apply);
+    apply();
+  });
+})();
+</script>

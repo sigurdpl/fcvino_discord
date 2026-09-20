@@ -39,8 +39,9 @@
           <input type="datetime-local" name="ends_at"
                  value="{{ fmt_local_input(event['ends_at']) }}">
         </label>
-        <label data-for="trip">Country
-          <input name="country" value="{{ event['country'] or '' }}">
+        <label>Country
+          <input name="country" placeholder="Belgium"
+                 value="{{ event['country'] or ('' if event['kind'] == 'trip' else home_country) }}">
         </label>
         <label>Where
           <input name="location" value="{{ event['location'] or '' }}">
@@ -176,5 +177,7 @@
   {% endif %}
 </section>
 {% endif %}
+
+{% include "events/_kinds.html" %}
 
 {% endblock %}
