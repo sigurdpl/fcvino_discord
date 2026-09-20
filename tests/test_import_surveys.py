@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import json
 from pathlib import Path
 
 import openpyxl
@@ -117,3 +118,43 @@ def test_excel_lock_files_are_not_spreadsheets(tmp_path):
     (tmp_path / "._Export FC Vino Real.xlsx").write_bytes(b"not a workbook")
     evenings = surveys.read_folder(tmp_path, [])
     assert [e.theme for e in evenings] == ["Real"]
+
+
+def test_a_names_file_says_what_the_columns_were(tmp_path):
+    """Some evenings are written up elsewhere and the survey only numbers them."""
+    path = export(tmp_path, "Blind night",
+                  ["1. Vin 1", "2. Vin 2", "3. Vin 3", "4. Navn"],
+                  [("2026-06-08 20:00:00", [88, 91, 85], "Tore")])
+    path.with_suffix(path.suffix + ".names.json").write_text(json.dumps({
+        "1": {"name": "Moulin Touchais 1980", "brought_by": "Thomas"},
+        "2": {"name": "Mayer Yarra Valley Chardonnay 2023", "brought_by": "Robert"},
+    }), encoding="utf-8")
+
+    wines = surveys.read_export(path, []).wines
+    assert [(w["name"], w["brought_by"]) for w in wines] == [
+        ("Moulin Touchais 1980", "Thomas"),
+        ("Mayer Yarra Valley Chardonnay 2023", "Robert"),
+    ], "and the column it does not mention is simply not a wine"
+    assert wines[0]["scores"] == {"Tore": 88}
+
+
+def test_an_evening_that_names_nothing_waits(tmp_path):
+    """Rather than putting bottles called 'Vin 3' in a cellar of 1156."""
+    notes = []
+    path = export(tmp_path, "Nameless",
+                  ["1. Vin 1", "2. Vin 2", "3. Navn"],
+                  [("2026-06-08 20:00:00", [88, 91], "Tore")])
+    assert surveys.read_export(path, notes) is None
+    assert any("names.json" in n for n in notes), "and says what would fix it"
+
+
+def test_a_column_that_names_nothing_is_not_a_bottle(tmp_path):
+    """The refusal is about naming nothing at all. One unnamed column among
+    named ones is simply left out — a wine with no name helps nobody."""
+    notes = []
+    path = export(tmp_path, "Mostly named",
+                  ["1. Ch. Musar 2005", "2. Vin 2", "3. Navn"],
+                  [("2026-06-08 20:00:00", [88, 91], "Tore")])
+    evening = surveys.read_export(path, notes)
+    assert [w["name"] for w in evening.wines] == ["Ch. Musar 2005"]
+    assert any("named no wine" in n for n in notes)

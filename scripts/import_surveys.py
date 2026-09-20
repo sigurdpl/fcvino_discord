@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime
+import json
 import re
 import sys
 import unicodedata
@@ -55,10 +56,13 @@ DATE_COLUMN = 4
 SCORE_REPAIRS = {88787: 88, 8888: 88}
 
 # An evening whose survey recorded who brought each bottle instead of what it
-# was. The 2026 sitting recorded neither and is left out until someone can say
-# what was poured.
+# was.
 BRINGER_LABELLED = "min hvite favoritt"
-NEEDS_WINE_NAMES = "min hvite favoritt 8. juni 2026"
+
+# "7. Vin 7" is an ordering prefix and nothing else, so it cleans away to an
+# empty string — the survey never said what was in the glass. Such a column is
+# not a bottle, and an evening made entirely of them waits for a names file
+# rather than putting nameless wine in a cellar of 1156.
 
 # Dates the club wrote into a filename, in the forms they used.
 FILENAME_DATE = re.compile(
@@ -112,6 +116,25 @@ def is_wine_column(header: str, name_column: str) -> bool:
     return not header.endswith("?") and not re.search(r"\bnavn\b", header, re.I)
 
 
+def read_names(path: Path) -> dict[int, dict]:
+    """`<export>.names.json`: what the survey's columns actually were.
+
+    Some evenings are written up elsewhere and the survey only numbers them. The
+    file maps a column to a bottle and who brought it; a column it does not
+    mention is not imported, which is how an evening's unexplained columns are
+    left out without a second mechanism for leaving things out.
+    """
+    sidecar = path.with_suffix(path.suffix + ".names.json")
+    if not sidecar.exists():
+        return {}
+    listed = json.loads(sidecar.read_text(encoding="utf-8"))
+    return {
+        int(column): entry
+        for column, entry in listed.items()
+        if column.isdigit() and isinstance(entry, dict)
+    }
+
+
 def read_export(path: Path, notes: list[str]) -> Evening | None:
     import openpyxl
 
@@ -143,13 +166,28 @@ def read_export(path: Path, notes: list[str]) -> Evening | None:
     evening = Evening(theme, when, path.name)
     bringers = fold(theme) == fold(BRINGER_LABELLED)
     known = {fold(m): m for m in vinotek.MEMBERS}
+    named = read_names(path)
 
+    position, bare = 0, 0
     for index in range(METADATA_COLUMNS, len(header)):
         if index == name_index or not is_wine_column(header[index], name_column):
             continue
+        position += 1
         label = wine_origin.clean_name(header[index])
         brought_by = None
-        if bringers and fold(label) in known:
+
+        if named:
+            # A names file is the whole truth about this evening: a column it
+            # does not mention was not a wine anybody wrote down.
+            entry = named.get(position)
+            if entry is None:
+                continue
+            label = entry["name"]
+            brought_by = entry.get("brought_by")
+        elif not label:
+            bare += 1
+            continue
+        elif bringers and fold(label) in known:
             # "Vin 3 HÅVARD" is who brought it, not what it was.
             brought_by = known[fold(label)]
             label = f"{brought_by}'s white"
@@ -181,6 +219,15 @@ def read_export(path: Path, notes: list[str]) -> Evening | None:
             "brought_by": brought_by,
             "scores": scores,
         })
+
+    if bare and evening.wines:
+        notes.append(f"{path.name}: {bare} column(s) named no wine and were left out")
+    if bare and not evening.wines:
+        notes.append(
+            f"{path.name}: skipped — its {bare} columns name no wine, only "
+            "'Vin 1'…. Write a <export>.names.json beside it and it will be read."
+        )
+        return None
     return evening
 
 
@@ -190,14 +237,6 @@ def read_folder(folder: Path, notes: list[str]) -> list[Evening]:
         # `~$…` is Excel's lock file for a workbook somebody has open, and
         # `._…` is a macOS sidecar. Neither is a spreadsheet.
         if path.name.startswith(("~$", "._")):
-            continue
-        if fold(theme_from_filename(path)) == fold(
-            re.sub(r"^Export\s+FC\s+Vino\s+", "", NEEDS_WINE_NAMES, flags=re.I)
-        ) or fold(path.stem).endswith(fold(NEEDS_WINE_NAMES)):
-            notes.append(
-                f"{path.name}: skipped — its columns are 'Vin 1'…'Vin 10' and name "
-                "no wine. Its scores are waiting for a list of what was poured."
-            )
             continue
         evening = read_export(path, notes)
         if evening is not None:
@@ -280,9 +319,15 @@ def write(db: Database, evenings: list[Evening], *, dry_run: bool) -> dict:
         )["id"]
 
         for wine in evening.wines:
+            # Who brought it is part of which bottle this is. Two people can
+            # turn up with the same wine — and at a blind tasting it gets poured
+            # and scored twice — so matching on the name alone would fold the
+            # second onto the first and overwrite its scores.
             existing = db.query_one(
-                "SELECT id FROM wines WHERE tasting_id=? AND LOWER(name)=LOWER(?)",
-                (tasting_id, wine["name"]),
+                """SELECT id FROM wines
+                   WHERE tasting_id=? AND LOWER(name)=LOWER(?)
+                     AND IFNULL(brought_by,'')=IFNULL(?,'')""",
+                (tasting_id, wine["name"], wine["brought_by"]),
             )
             if existing:
                 wine_id = existing["id"]
