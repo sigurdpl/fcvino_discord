@@ -252,11 +252,15 @@ class Wine(commands.Cog):
         become *your* scores, so `/wine mine` and the boards can address you.
         """
         row = self.db.query_one(
-            "SELECT * FROM wine_members WHERE LOWER(name)=LOWER(?)", (name.strip(),)
+            "SELECT * FROM wine_members WHERE LOWER(name)=LOWER(?) AND NOT guest",
+            (name.strip(),),
         )
         if row is None:
             known = ", ".join(
-                r["name"] for r in self.db.query("SELECT name FROM wine_members ORDER BY name")
+                r["name"]
+                for r in self.db.query(
+                    "SELECT name FROM wine_members WHERE NOT guest ORDER BY name"
+                )
             )
             await interaction.response.send_message(
                 f"No **{truncate(name, 40)}** in the records. Known names: {known}",
@@ -293,6 +297,7 @@ class Wine(commands.Cog):
         rows = self.db.query(
             """SELECT m.name, m.discord_id, COUNT(r.score) AS n FROM wine_members m
                LEFT JOIN wine_ratings r ON r.member_id = m.id
+               WHERE NOT m.guest
                GROUP BY m.id ORDER BY n DESC""",
         )
         return [
@@ -544,7 +549,8 @@ class Wine(commands.Cog):
             """SELECT (SELECT COUNT(*) FROM wines) AS wines,
                       (SELECT COUNT(*) FROM wine_ratings) AS ratings,
                       (SELECT COUNT(*) FROM tastings) AS tastings,
-                      (SELECT COUNT(*) FROM wine_members) AS members"""
+                      (SELECT COUNT(*) FROM wine_members
+                        WHERE NOT guest) AS members"""
         )
         if totals is None or not totals["wines"]:
             await interaction.response.send_message(

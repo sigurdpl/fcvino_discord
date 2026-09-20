@@ -833,3 +833,92 @@ def test_an_evening_is_filed_under_whoever_registered_it(behind_access, cellar):
     behind_access.post("/events", headers=ACCESS_HEADER,
                        data={"theme": "Named", "starts_at": SOON})
     assert only_event(cellar)["created_by"] == "Morten"
+
+
+# -- guests are not members -------------------------------------------------
+#
+# Someone who came to an evening or three without ever joining. Their scores
+# are part of what those bottles averaged and stay; the club's count and its
+# pickers are about membership, and leave them out.
+
+
+@pytest.fixture()
+def with_guest(cellar):
+    """Andy, Morten, Tore — plus a guest who rated one bottle."""
+    cellar.execute("INSERT INTO wine_members (name, guest) VALUES ('Marius', 1)")
+    guest = cellar.query_one("SELECT id FROM wine_members WHERE name='Marius'")["id"]
+    cellar.execute(
+        "INSERT INTO wine_ratings (wine_id, member_id, score, rated_at)"
+        " VALUES (3, ?, 70, '2014-06-01T00:00:00+00:00')",
+        (guest,),
+    )
+    return cellar
+
+
+def test_a_guest_is_not_counted_as_a_member(with_guest):
+    from web import queries
+    assert queries.cellar_totals(with_guest)["members"] == 3, "Andy, Morten, Tore"
+    assert with_guest.query_one("SELECT COUNT(*) AS n FROM wine_members")["n"] == 4
+
+
+def test_a_guest_is_not_offered_as_one(with_guest):
+    from web import queries
+    assert "Marius" not in [m["name"] for m in queries.members(with_guest)]
+
+
+def test_a_guests_scores_are_kept(with_guest):
+    """They are part of what that bottle averaged — removing them would quietly
+    change a number the club recorded years ago."""
+    from web import queries
+    ratings = queries.wine_ratings(with_guest, 3)
+    assert "Marius" in [r["name"] for r in ratings]
+    assert queries.wine_summary(with_guest, 3)["ratings"] == 4
+
+
+def test_the_home_page_counts_the_club_not_the_guests(signed_in, cellar):
+    cellar.execute("INSERT INTO wine_members (name, guest) VALUES ('Marius', 1)")
+    page = signed_in.get("/").text
+    import re as _re
+    tile = _re.search(r'<div class="n">(\d+)</div><div class="l">Members</div>', page)
+    assert tile and tile.group(1) == "3"
+
+
+def test_a_guest_cannot_be_claimed_as_your_name(signed_in, cellar):
+    """The 'who are you?' dropdown is the club, so a guest is not in it."""
+    cellar.execute("INSERT INTO wine_members (name, guest) VALUES ('Marius', 1)")
+    assert "Marius" not in signed_in.get("/wine").text
+# -- the home page's upcoming panel -----------------------------------------
+
+
+def test_the_home_page_shows_what_is_coming_up(signed_in):
+    make_event(signed_in, theme="Moden Piemonte")
+    page = signed_in.get("/").text
+    assert "Upcoming" in page
+    assert "Moden Piemonte" in page
+
+
+def test_an_evening_already_held_is_not_upcoming(signed_in):
+    make_event(signed_in, when=GONE, theme="Long gone")
+    assert "Long gone" not in signed_in.get("/").text
+
+
+def test_only_the_next_four_evenings_are_listed(signed_in):
+    for month in range(1, 6):          # five evenings, registered out of order
+        make_event(signed_in, when=f"2099-{6 - month:02d}-01T19:00",
+                   theme=f"Evening {6 - month}")
+    page = signed_in.get("/").text
+    shown = [n for n in range(1, 6) if f"Evening {n}" in page]
+    assert shown == [1, 2, 3, 4], "the four soonest, and not the fifth"
+    assert page.index("Evening 1") < page.index("Evening 4"), "soonest first"
+
+
+def test_an_empty_diary_says_so_and_points_at_the_page(signed_in):
+    page = signed_in.get("/").text
+    assert "Nothing in the diary" in page
+    assert "Register an evening" in page
+
+
+def test_the_map_of_where_we_have_been_is_gone(signed_in):
+    page = signed_in.get("/").text
+    assert "Where we have been" not in page
+    assert "fv-map" not in page

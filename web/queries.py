@@ -13,7 +13,7 @@ from __future__ import annotations
 import sqlite3
 
 from bot import trip_stats, wine_stats
-from bot.db import Database
+from bot.db import Database, utcnow_iso
 
 from .search import Index, Row
 
@@ -189,14 +189,16 @@ def cellar_totals(db: Database) -> sqlite3.Row | None:
         """SELECT (SELECT COUNT(*) FROM wines)         AS wines,
                   (SELECT COUNT(*) FROM wine_ratings)  AS ratings,
                   (SELECT COUNT(*) FROM tastings)      AS tastings,
-                  (SELECT COUNT(*) FROM wine_members)  AS members,
+                  (SELECT COUNT(*) FROM wine_members
+                    WHERE NOT guest)                   AS members,
                   (SELECT MIN(year) FROM tastings)     AS first_year,
                   (SELECT MAX(year) FROM tastings)     AS last_year"""
     )
 
 
 def members(db: Database) -> list[sqlite3.Row]:
-    return db.query("SELECT id, name FROM wine_members ORDER BY name")
+    """The club. Guests rated a few bottles once and are not on this list."""
+    return db.query("SELECT id, name FROM wine_members WHERE NOT guest ORDER BY name")
 
 
 def member_ratings(db: Database, member_id: int, limit: int = 100) -> list[sqlite3.Row]:
@@ -220,6 +222,21 @@ def events(db: Database) -> list[sqlite3.Row]:
         """SELECT e.*, COUNT(w.id) AS wines
            FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
            GROUP BY e.id ORDER BY e.starts_at"""
+    )
+
+
+def upcoming_events(db: Database, limit: int = 4) -> list[sqlite3.Row]:
+    """The next few evenings, soonest first.
+
+    `utcnow_iso()` is already the shape `starts_at` is stored in, so the two
+    compare as text without parsing either.
+    """
+    return db.query(
+        """SELECT e.*, COUNT(w.id) AS wines
+           FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
+           WHERE e.starts_at >= ?
+           GROUP BY e.id ORDER BY e.starts_at LIMIT ?""",
+        (utcnow_iso(), limit),
     )
 
 

@@ -16,7 +16,11 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+
+# People who turned up to an evening without ever joining. Their scores count
+# towards the bottles they rated; they do not count towards the club.
+GUESTS = frozenset({"Marius"})
 
 SCHEMA = """
 -- `brought_by` is per wine, not per tasting: at a bring-your-own night every
@@ -51,10 +55,14 @@ CREATE TABLE IF NOT EXISTS wine_ratings (
     PRIMARY KEY (wine_id, member_id)
 );
 
+-- `guest` is someone who turned up to an evening or three without ever being
+-- part of the club. Their scores are real and stay — they are part of what
+-- those bottles averaged — but they are not counted or offered as a member.
 CREATE TABLE IF NOT EXISTS wine_members (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL UNIQUE,
-    discord_id INTEGER UNIQUE
+    discord_id INTEGER UNIQUE,
+    guest      INTEGER NOT NULL DEFAULT 0
 );
 
 -- One evening: a theme, a host's living room, and the wines opened there. The
@@ -298,6 +306,7 @@ class Database:
         self._migrate_trip_match_city()
         self._migrate_trip_year_key()
         self._migrate_tasting_host()
+        self._migrate_wine_member_guest()
         self._migrate_wine_columns()
         self._migrate_wine_ratings_members()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -312,6 +321,25 @@ class Database:
             conn.execute("ALTER TABLE tastings ADD COLUMN host TEXT")
             conn.commit()
             log.info("added tastings.host")
+
+    def _migrate_wine_member_guest(self) -> None:
+        """Add wine_members.guest, and mark the people who were only ever guests.
+
+        The names live in code rather than as a one-off UPDATE so that a
+        re-import cannot quietly promote a guest back to a member: the
+        spreadsheet knows who scored what and nothing else.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(wine_members)")}
+        if not columns or "guest" in columns:
+            return
+        conn.execute("ALTER TABLE wine_members ADD COLUMN guest INTEGER NOT NULL DEFAULT 0")
+        conn.executemany(
+            "UPDATE wine_members SET guest=1 WHERE name=?", [(n,) for n in GUESTS]
+        )
+        conn.commit()
+        log.info("added wine_members.guest (guests: %s)", ", ".join(sorted(GUESTS)))
 
     def _migrate_wine_columns(self) -> None:
         """Add wines.tasting_id and wines.brought_by where they're missing."""

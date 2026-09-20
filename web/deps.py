@@ -176,7 +176,8 @@ def _members(request: Request) -> list:
     db = getattr(request.app.state, "db", None)
     if db is None:
         return []
-    return db.query("SELECT id, name FROM wine_members ORDER BY name")
+    from .queries import members
+    return members(db)
 
 
 def _totals(request: Request):

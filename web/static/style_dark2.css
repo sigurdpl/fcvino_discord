@@ -346,21 +346,6 @@ button.quiet:hover { background: var(--line); }
 
 /* -- the landing page ---------------------------------------------------- */
 
-/* Robert's map, from the second <style> block of his mockup: decoration
-   rather than cartography, a dark panel for the destination pills to sit on. */
-.fv-map {
-  height: 285px; border-radius: 10px; position: relative; overflow: hidden;
-  background:
-    radial-gradient(circle at 48% 52%, rgba(111,23,43,.8) 0 5px, transparent 6px),
-    radial-gradient(circle at 62% 40%, rgba(181,148,90,.7) 0 4px, transparent 5px),
-    linear-gradient(135deg, #111612, #20251f);
-}
-.fv-map::before {
-  content: "EUROPE"; position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: #566057; font: 700 3rem Georgia, serif; letter-spacing: .18em; opacity: .22;
-}
-
 /* The card photo as a background rather than an <img>, for the same reason the
    hero uses one: the club's photographs are not in the repository, and a
    missing background is a dark panel where a missing <img> is a broken icon. */
