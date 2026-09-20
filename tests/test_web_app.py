@@ -705,10 +705,12 @@ def test_the_evening_is_stored_as_the_instant_not_the_wall_clock(signed_in, cell
     assert "19:00" in signed_in.get("/events").text
 
 
-def test_an_evening_needs_a_theme(signed_in, cellar):
+def test_an_event_needs_a_name(signed_in, cellar):
+    """"Theme" was right when every event was a tasting; a trip has a
+    destination and a Julebord has a title."""
     response = make_event(signed_in, theme="   ")
     assert response.status_code == 400
-    assert "needs a theme" in response.text
+    assert "needs a name" in response.text
     assert cellar.query("SELECT * FROM events") == []
 
 
@@ -922,3 +924,191 @@ def test_the_map_of_where_we_have_been_is_gone(signed_in):
     page = signed_in.get("/").text
     assert "Where we have been" not in page
     assert "fv-map" not in page
+
+
+# -- four kinds of event ----------------------------------------------------
+
+
+def kinded(client, kind, **extra):
+    data = {"kind": kind, "theme": f"A {kind}", "starts_at": SOON}
+    return client.post("/events", data={**data, **extra}, follow_redirects=False)
+
+
+def latest(db):
+    return db.query("SELECT * FROM events ORDER BY id DESC")[0]
+
+
+@pytest.mark.parametrize("kind", ["tasting", "blind", "trip", "other"])
+def test_each_kind_can_be_registered(signed_in, cellar, kind):
+    extra = {"country": "Belgium"} if kind == "trip" else {}
+    assert kinded(signed_in, kind, **extra).status_code == 303
+    assert latest(cellar)["kind"] == kind
+    assert f"A {kind}" in signed_in.get("/events").text
+
+
+def test_an_unknown_kind_is_refused(signed_in, cellar):
+    assert kinded(signed_in, "banquet").status_code == 400
+    assert cellar.query("SELECT * FROM events") == []
+
+
+# -- blind: the bottles are not named until it is archived ------------------
+
+
+def blind_with_bottles(client, db, when=GONE):
+    kinded(client, "blind", theme="Blind night", starts_at=when)
+    event_id = latest(db)["id"]
+    # Names that appear nowhere else on the page — the add-a-bottle form's
+    # placeholder is itself a wine name, and would match a careless assertion.
+    for name in ("Vega Sicilia Unico", "Pingus Ribera"):
+        client.post(f"/events/{event_id}/wines",
+                    data={"name": name, "vintage": "2019", "grape": "Nebbiolo",
+                          "brought_by": "Thomas"})
+    return event_id
+
+
+def test_a_blind_evening_does_not_name_its_bottles(signed_in, cellar):
+    """The whole point. The names are in the database; the page will not say."""
+    event_id = blind_with_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in page
+    assert "Pingus Ribera" not in page
+    assert "Nebbiolo" not in page
+    assert "Wine 1" in page and "Wine 2" in page
+    assert "Thomas" in page, "who brought it still shows, so the list is usable"
+    assert cellar.query("SELECT name FROM event_wines")[0]["name"] == "Vega Sicilia Unico"
+
+
+def test_archiving_a_blind_evening_names_them(signed_in, cellar):
+    event_id = blind_with_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/promote")
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" in page
+    assert "Wine 1" not in page
+    assert cellar.query("SELECT * FROM wines WHERE name = 'Vega Sicilia Unico'") != []
+
+
+def test_an_ordinary_tasting_names_its_bottles_all_along(signed_in, cellar):
+    """The regression that matters: nothing about a normal evening changed."""
+    make_event(signed_in, theme="Not blind")
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Ch. Musar 2005"})
+    assert "Ch. Musar 2005" in signed_in.get(f"/events/{event_id}").text
+
+
+# -- trips go to the archive of seventeen -----------------------------------
+
+
+def test_a_trip_needs_a_country(signed_in, cellar):
+    """Without one it could never be filed, and finding that out later is no use."""
+    response = kinded(signed_in, "trip")
+    assert response.status_code == 400
+    assert "needs a country" in response.text
+    assert cellar.query("SELECT * FROM events") == []
+
+
+def test_archiving_a_trip_puts_it_with_the_others(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", starts_at="2027-03-06T08:00",
+           ends_at="2027-03-08T20:00", country="Belgium", location="Brugge")
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/promote")
+
+    trip = cellar.query_one("SELECT * FROM trips WHERE year = 2027")
+    assert trip["country"] == "Belgium"
+    assert trip["city"] == "Brugge"
+    assert (trip["date_from"], trip["date_to"]) == ("2027-03-06", "2027-03-08")
+    assert latest(cellar)["trip_id"] == trip["id"]
+    assert cellar.query("SELECT * FROM tastings WHERE theme = 'Brugge'") == [], \
+        "a trip is not an evening in the cellar"
+
+
+def test_a_trip_is_not_archived_twice(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", starts_at="2027-03-06T08:00",
+           country="Belgium")
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/promote")
+    assert len(cellar.query("SELECT * FROM trips WHERE year = 2027")) == 1
+
+
+def test_a_trip_shows_its_span_not_a_departure(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", starts_at="2027-03-06T08:00",
+           ends_at="2027-03-08T20:00", country="Belgium")
+    assert "6–8 March 2027" in signed_in.get("/events").text
+
+
+# -- something else ---------------------------------------------------------
+
+
+def test_a_free_form_event_has_no_bottles_and_no_archive(signed_in, cellar):
+    kinded(signed_in, "other", theme="Julebord", starts_at=GONE,
+           notes="Dress code: awful jumpers")
+    page = signed_in.get(f"/events/{latest(cellar)['id']}").text
+    assert "Dress code: awful jumpers" in page
+    assert "Add a bottle" not in page
+    assert "Move to the archive" not in page
+
+
+# -- Norway is where the club is --------------------------------------------
+
+
+def test_the_register_form_arrives_with_norway_in_it(signed_in):
+    assert 'name="country" value="Norway"' in signed_in.get("/events").text
+
+
+def test_a_tasting_registered_untouched_is_in_norway(signed_in, cellar):
+    make_event(signed_in, theme="Moden Piemonte", country="Norway")
+    assert latest(cellar)["country"] == "Norway"
+
+
+def test_the_diary_says_nothing_about_being_in_norway(signed_in, cellar):
+    """True of nearly every row, so printing it says nothing and costs a column."""
+    # No apostrophe in the location: Jinja escapes it, and the escaping is not
+    # what this test is about.
+    make_event(signed_in, theme="At home", location="Lennart", country="Norway")
+    # The form's box and the script both legitimately say Norway, so look at
+    # the table element alone.
+    page = signed_in.get("/events").text
+    table = page.split("Coming up")[1].split("</table>")[0]
+    assert "Lennart" in table
+    assert "Norway" not in table
+
+
+def test_the_diary_does_say_when_it_is_somewhere_else(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", location="Brugge", country="Belgium")
+    assert "Brugge, Belgium" in signed_in.get("/events").text
+
+
+def test_an_evening_held_abroad_keeps_its_country(signed_in, cellar):
+    make_event(signed_in, theme="Vinsmaking i Italia", location="Alba", country="Italy")
+    assert latest(cellar)["country"] == "Italy"
+    assert "Alba, Italy" in signed_in.get("/events").text
+
+
+@pytest.mark.parametrize("location, country, expected", [
+    ("Thomas's", "Norway", "Thomas's"),
+    ("Thomas's", "  norway ", "Thomas's"),      # however it was typed
+    ("Brugge", "Belgium", "Brugge, Belgium"),
+    (None, "Belgium", "Belgium"),
+    ("Erk's", None, "Erk's"),
+    (None, None, "—"),
+])
+def test_how_a_place_reads(location, country, expected):
+    from web.deps import fmt_where
+    assert fmt_where(location, country) == expected
+
+
+def test_hidden_really_hides(signed_in):
+    """The per-kind fields are hidden with the `hidden` attribute, and a class
+    rule setting `display` outranks the browser's own `[hidden]` rule — so
+    without this the attribute is set and the field stays on screen."""
+    css = signed_in.get("/static/style_dark2.css").text
+    assert "[hidden] { display: none !important; }" in css
+
+
+def test_an_end_on_the_same_day_is_an_end_time(signed_in, cellar):
+    """A Julebord running 18:00 to 22:59 is one evening, not "28–28 January"."""
+    kinded(signed_in, "other", theme="Julebord",
+           starts_at="2027-01-28T18:00", ends_at="2027-01-28T22:59")
+    page = signed_in.get("/events").text
+    assert "18:00–22:59" in page
+    assert "28–28" not in page

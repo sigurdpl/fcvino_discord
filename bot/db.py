@@ -16,7 +16,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # People who turned up to an evening without ever joining. Their scores count
 # towards the bottles they rated; they do not count towards the club.
@@ -94,14 +94,25 @@ CREATE INDEX IF NOT EXISTS idx_tastings_when ON tastings(year, month);
 -- `starts_at` is UTC, like every other instant here; the web app converts to
 -- Europe/Oslo for display. `tasting_id` is null until the evening is promoted
 -- into the archive, and stamped afterwards so it cannot be promoted twice.
+-- `kind` decides what the rest of the row means and how the page reads it:
+--   tasting  an ordinary evening, bottles named on the page
+--   blind    the same, but the bottles show as Wine 1, Wine 2 until it is
+--            archived — the names live here throughout, only the page hides them
+--   trip     an away trip, which runs over days and ends up in `trips`
+--   other    whatever else the club decides to do; `notes` is its description
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT    NOT NULL DEFAULT 'tasting'
+               CHECK (kind IN ('tasting', 'blind', 'trip', 'other')),
     theme      TEXT    NOT NULL,
     location   TEXT,
     host       TEXT,
+    country    TEXT,
     starts_at  TEXT    NOT NULL,
+    ends_at    TEXT,
     notes      TEXT,
     tasting_id INTEGER REFERENCES tastings(id) ON DELETE SET NULL,
+    trip_id    INTEGER REFERENCES trips(id) ON DELETE SET NULL,
     created_by TEXT,
     created_at TEXT    NOT NULL
 );
@@ -307,6 +318,7 @@ class Database:
         self._migrate_trip_year_key()
         self._migrate_tasting_host()
         self._migrate_wine_member_guest()
+        self._migrate_event_kind()
         self._migrate_wine_columns()
         self._migrate_wine_ratings_members()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -340,6 +352,33 @@ class Database:
         )
         conn.commit()
         log.info("added wine_members.guest (guests: %s)", ", ".join(sorted(GUESTS)))
+
+    def _migrate_event_kind(self) -> None:
+        """Add the columns the three non-tasting kinds of event need.
+
+        Every event that exists already is an ordinary tasting, which is what
+        the column defaults to, so nothing has to be backfilled.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+        if not columns:
+            return
+        for column, ddl in (
+            ("kind", "ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT 'tasting'"),
+            ("ends_at", "ALTER TABLE events ADD COLUMN ends_at TEXT"),
+            ("country", "ALTER TABLE events ADD COLUMN country TEXT"),
+            # ON DELETE SET NULL matters and is easy to lose here: without it a
+            # migrated database refuses to delete an archived trip while its
+            # event still points at it, and a fresh one allows it.
+            ("trip_id",
+             "ALTER TABLE events ADD COLUMN trip_id INTEGER"
+             " REFERENCES trips(id) ON DELETE SET NULL"),
+        ):
+            if column not in columns:
+                conn.execute(ddl)
+                conn.commit()
+                log.info("added events.%s", column)
 
     def _migrate_wine_columns(self) -> None:
         """Add wines.tasting_id and wines.brought_by where they're missing."""
@@ -690,17 +729,21 @@ class Database:
         *,
         theme: str,
         starts_at: str,
+        kind: str = "tasting",
         location: str | None = None,
         host: str | None = None,
+        country: str | None = None,
+        ends_at: str | None = None,
         notes: str | None = None,
         created_by: str | None = None,
     ) -> int:
-        """Put a planned evening in the diary, returning its id."""
+        """Put something in the diary, returning its id. See `kind` in SCHEMA."""
         return self.execute(
-            """INSERT INTO events (theme, location, host, starts_at, notes,
-                                   created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (theme, location, host, starts_at, notes, created_by, utcnow_iso()),
+            """INSERT INTO events (kind, theme, location, host, country,
+                                   starts_at, ends_at, notes, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (kind, theme, location, host, country, starts_at, ends_at, notes,
+             created_by, utcnow_iso()),
         )
 
     def update_event(self, event_id: int, **fields: Any) -> None:
@@ -710,7 +753,8 @@ class Database:
         `upsert_trip` gives it, so correcting the time cannot wipe the notes.
         Clearing a field is done by passing an empty string.
         """
-        allowed = ("theme", "location", "host", "starts_at", "notes")
+        allowed = ("kind", "theme", "location", "host", "country",
+                   "starts_at", "ends_at", "notes")
         changes = {k: v for k, v in fields.items() if k in allowed and v is not None}
         if not changes:
             return
@@ -748,18 +792,27 @@ class Database:
         )
 
     def promote_event(self, event_id: int) -> int | None:
-        """Move a held evening into the archive, returning the tasting's id.
+        """File a held event where the club keeps that kind of thing.
 
-        The wines become ordinary cellar rows against the new tasting, which is
-        what lets them be scored later with the same `wine_ratings` table the
-        club's whole history already lives in. `added_by` is the import
-        sentinel: a visitor to the web app has no Discord id.
+        A tasting — blind or not — becomes a `tastings` row with its bottles
+        copied into `wines`, which is what lets them be scored later with the
+        same `wine_ratings` table the club's whole history already lives in. For
+        a blind evening this is also the moment its bottles stop being Wine 1
+        and Wine 2. A trip becomes a row in `trips`. Anything else has no
+        archive to go to.
 
-        Returns None if the evening has already been promoted, so pressing the
-        button twice cannot leave two copies in the archive.
+        `added_by` is the import sentinel: a visitor to the web app has no
+        Discord id. Returns None when there is nothing to do, so pressing the
+        button twice cannot leave two copies anywhere.
         """
         event = self.query_one("SELECT * FROM events WHERE id=?", (event_id,))
-        if event is None or event["tasting_id"] is not None:
+        if event is None:
+            return None
+        if event["kind"] == "other":
+            return None
+        if event["kind"] == "trip":
+            return self._promote_trip(event)
+        if event["tasting_id"] is not None:
             return None
 
         when = parse_utc(event["starts_at"])
@@ -789,6 +842,32 @@ class Database:
             )
         self.execute("UPDATE events SET tasting_id=? WHERE id=?", (tasting_id, event_id))
         return tasting_id
+
+    def _promote_trip(self, event: sqlite3.Row) -> int | None:
+        """File a finished trip in the archive of one-a-year away trips.
+
+        `upsert_trip` keys on the year and amends rather than duplicating, which
+        is the right reading here too: a trip entered months ahead and corrected
+        afterwards is still the same trip. The matches are not touched — they go
+        in on the Trips page, once the fixtures are actually known.
+        """
+        if event["trip_id"] is not None:
+            return None
+        if not (event["country"] or "").strip():
+            return None
+        starts = parse_utc(event["starts_at"])
+        ends = parse_utc(event["ends_at"]) if event["ends_at"] else None
+        trip_id = self.upsert_trip(
+            year=starts.year,
+            country=event["country"].strip(),
+            city=event["location"],
+            date_from=starts.date().isoformat(),
+            date_to=ends.date().isoformat() if ends else None,
+            notes=event["notes"],
+            added_by=0,
+        )
+        self.execute("UPDATE events SET trip_id=? WHERE id=?", (trip_id, event["id"]))
+        return trip_id
 
     # -- trips archive -----------------------------------------------------
 
