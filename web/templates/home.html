@@ -75,6 +75,31 @@
 
 <section class="fv-lower">
   <div class="fv-panel">
+    <h2>Upcoming <a class="faint small" href="/events">See the diary →</a></h2>
+    <ul class="fv-list">
+      {% for e in upcoming %}
+      <li>
+        <span class="avatar sm">🍷</span>
+        <div>
+          <div class="type">{{ fmt_when(e['starts_at']) }}</div>
+          <div class="name"><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></div>
+          <div class="meta">
+            {%- if e['location'] %}{{ e['location'] }} · {% endif -%}
+            {{ e['wines'] }} bottle{{ '' if e['wines'] == 1 else 's' }} lined up
+          </div>
+        </div>
+        <span class="faint">›</span>
+      </li>
+      {% else %}
+      {#- The normal state until somebody puts an evening in, so it says where. -#}
+      <li><div class="muted small">
+        Nothing in the diary. <a href="/events">Register an evening →</a>
+      </div></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="fv-panel">
     <h2>Latest <a class="faint small" href="/wine/tastings">See all →</a></h2>
     <ul class="fv-list">
       {% for item in recent %}
@@ -93,16 +118,6 @@
       <li><div class="muted small">Nothing recorded yet.</div></li>
       {% endfor %}
     </ul>
-  </div>
-
-  <div class="fv-panel">
-    <h2>Where we have been <a class="faint small" href="/trips">See the trips →</a></h2>
-    <div class="fv-map"></div>
-    <div class="inline" style="margin-top: .7rem">
-      {% for country, visits in countries[:8] %}
-        <span class="pill">{{ country }}{% if visits > 1 %} ×{{ visits }}{% endif %}</span>
-      {% endfor %}
-    </div>
   </div>
 
   <div class="fv-panel">
