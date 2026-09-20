@@ -10,23 +10,40 @@
   {#- Folded away by default: the page is for reading most of the time, and
       registering an evening is the rarer thing. -#}
   <details class="filters" {{ 'open' if error }}>
-    <summary>Register an evening</summary>
-    <form method="post" action="/events">
+    <summary>Register something</summary>
+    {#- The kind comes first because it decides which of the rest apply. The
+        script below hides the ones that do not; without it every field shows
+        and the form still posts correctly, so nothing depends on it. -#}
+    <form method="post" action="/events" class="kinded">
       <div class="grid">
-        <label>Theme
+        <label>Kind
+          <select name="kind">
+            {% for value, label in kinds.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Name
           <input name="theme" placeholder="Moden Piemonte" required>
         </label>
         <label>When
           <input type="datetime-local" name="starts_at" required>
         </label>
+        <label data-for="trip">Until
+          <input type="datetime-local" name="ends_at">
+        </label>
+        <label data-for="trip">Country
+          <input name="country" placeholder="Belgium">
+        </label>
         <label>Where
           <input name="location" placeholder="Thomas's">
         </label>
-        <label>Responsible
+        <label data-for="tasting blind other">Responsible
           <select name="host">
             <option value="">— nobody yet —</option>
             {% for m in members or [] %}<option value="{{ m['name'] }}">{{ m['name'] }}</option>{% endfor %}
           </select>
+        </label>
+        <label data-for="trip other">Description
+          <input name="notes" placeholder="Dress code: awful jumpers">
         </label>
       </div>
       <button type="submit">Register</button>
@@ -40,18 +57,23 @@
     <table class="rows">
       <thead>
         <tr>
-          <th>When</th><th>Theme</th><th>Where</th><th>Responsible</th>
+          <th>When</th><th>What</th><th>Where</th><th>Responsible</th>
           <th class="num">Wines</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for e in upcoming %}
         <tr>
-          <td class="nowrap">{{ fmt_when(e['starts_at']) }}</td>
-          <td><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></td>
-          <td class="muted">{{ e['location'] or '—' }}</td>
+          <td class="nowrap">{{ fmt_span(e['starts_at'], e['ends_at']) }}</td>
+          <td>
+            <a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a>
+            {% if e['kind'] != 'tasting' %}<span class="pill">{{ kinds[e['kind']] }}</span>{% endif %}
+          </td>
+          <td class="muted">
+            {{ [e['location'], e['country']] | select | join(', ') or '—' }}
+          </td>
           <td class="muted">{{ e['host'] or '—' }}</td>
-          <td class="num">{{ e['wines'] }}</td>
+          <td class="num">{{ e['wines'] or '—' }}</td>
           <td class="nowrap">{% include "events/_actions.html" %}</td>
         </tr>
         {% else %}
@@ -69,18 +91,23 @@
     <table class="rows">
       <thead>
         <tr>
-          <th>When</th><th>Theme</th><th>Where</th><th>Responsible</th>
+          <th>When</th><th>What</th><th>Where</th><th>Responsible</th>
           <th class="num">Wines</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for e in past %}
         <tr>
-          <td class="nowrap">{{ fmt_when(e['starts_at']) }}</td>
-          <td><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></td>
-          <td class="muted">{{ e['location'] or '—' }}</td>
+          <td class="nowrap">{{ fmt_span(e['starts_at'], e['ends_at']) }}</td>
+          <td>
+            <a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a>
+            {% if e['kind'] != 'tasting' %}<span class="pill">{{ kinds[e['kind']] }}</span>{% endif %}
+          </td>
+          <td class="muted">
+            {{ [e['location'], e['country']] | select | join(', ') or '—' }}
+          </td>
           <td class="muted">{{ e['host'] or '—' }}</td>
-          <td class="num">{{ e['wines'] }}</td>
+          <td class="num">{{ e['wines'] or '—' }}</td>
           <td class="nowrap">
             {% if e['tasting_id'] %}<span class="pill">in the archive</span>{% endif %}
             {% include "events/_actions.html" %}
@@ -92,5 +119,24 @@
   </div>
 </section>
 {% endif %}
+
+{#- Show only the fields the chosen kind uses. A `data-for` naming the kinds it
+    belongs to; anything unmarked always applies. Progressive: with scripting
+    off nothing is hidden and the form still works. -#}
+<script>
+(function () {
+  document.querySelectorAll('form.kinded').forEach(function (form) {
+    var select = form.querySelector('[name=kind]');
+    if (!select) return;
+    function apply() {
+      form.querySelectorAll('[data-for]').forEach(function (field) {
+        field.hidden = field.dataset.for.split(' ').indexOf(select.value) === -1;
+      });
+    }
+    select.addEventListener('change', apply);
+    apply();
+  });
+})();
+</script>
 
 {% endblock %}

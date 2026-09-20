@@ -79,13 +79,17 @@
     <ul class="fv-list">
       {% for e in upcoming %}
       <li>
-        <span class="avatar sm">🍷</span>
+        <span class="avatar sm">{{ {'trip': '✈️', 'other': '📅'}.get(e['kind'], '🍷') }}</span>
         <div>
-          <div class="type">{{ fmt_when(e['starts_at']) }}</div>
+          <div class="type">{{ fmt_span(e['starts_at'], e['ends_at']) }}</div>
           <div class="name"><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></div>
           <div class="meta">
-            {%- if e['location'] %}{{ e['location'] }} · {% endif -%}
-            {{ e['wines'] }} bottle{{ '' if e['wines'] == 1 else 's' }} lined up
+            {%- set where = [e['location'], e['country']] | select | join(', ') -%}
+            {%- if where %}{{ where }}{% endif -%}
+            {%- if e['kind'] in ('tasting', 'blind') %}
+              {%- if where %} · {% endif -%}
+              {{ e['wines'] }} bottle{{ '' if e['wines'] == 1 else 's' }} lined up
+            {%- endif -%}
           </div>
         </div>
         <span class="faint">›</span>
