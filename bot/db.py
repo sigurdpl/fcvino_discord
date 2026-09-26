@@ -16,7 +16,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # People who turned up to an evening without ever joining. Their scores count
 # towards the bottles they rated; they do not count towards the club.
@@ -136,6 +136,19 @@ CREATE TABLE IF NOT EXISTS event_wines (
     added_at   TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_event_wines_event ON event_wines(event_id);
+
+-- What the room thought, while the evening is still going on. Deliberately
+-- `wine_ratings` with one column renamed, so closing the event is a copy
+-- rather than a translation — and staged the same way the bottles already are:
+-- nothing reaches the cellar until somebody says the evening is over.
+CREATE TABLE IF NOT EXISTS event_votes (
+    event_wine_id INTEGER NOT NULL REFERENCES event_wines(id) ON DELETE CASCADE,
+    member_id     INTEGER NOT NULL REFERENCES wine_members(id) ON DELETE CASCADE,
+    score         INTEGER NOT NULL CHECK (score BETWEEN 1 AND 100),
+    notes         TEXT,
+    voted_at      TEXT    NOT NULL,
+    PRIMARY KEY (event_wine_id, member_id)
+);
 
 CREATE TABLE IF NOT EXISTS members (
     user_id            INTEGER PRIMARY KEY,
@@ -319,6 +332,7 @@ class Database:
         self._migrate_tasting_host()
         self._migrate_wine_member_guest()
         self._migrate_event_kind()
+        self._migrate_event_started()
         self._migrate_wine_columns()
         self._migrate_wine_ratings_members()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -379,6 +393,22 @@ class Database:
                 conn.execute(ddl)
                 conn.commit()
                 log.info("added events.%s", column)
+
+    def _migrate_event_started(self) -> None:
+        """Add events.started_at, which is when voting opened.
+
+        The state of an evening is derived from two facts rather than stored a
+        third time: no `started_at` and it has not begun, `started_at` with no
+        `tasting_id` and voting is open, `tasting_id` and it is closed. A status
+        column would be a fourth thing to keep in step with those.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)")}
+        if columns and "started_at" not in columns:
+            conn.execute("ALTER TABLE events ADD COLUMN started_at TEXT")
+            conn.commit()
+            log.info("added events.started_at")
 
     def _migrate_wine_columns(self) -> None:
         """Add wines.tasting_id and wines.brought_by where they're missing."""
@@ -791,6 +821,56 @@ class Database:
             "DELETE FROM event_wines WHERE id=? AND event_id=?", (wine_id, event_id)
         )
 
+    def start_event(self, event_id: int) -> bool:
+        """Open the voting. Returns False when it was already open.
+
+        Stamped rather than flagged, so the page can say when the evening
+        began, and so starting twice cannot quietly reset it.
+        """
+        row = self.query_one("SELECT started_at FROM events WHERE id=?", (event_id,))
+        if row is None or row["started_at"]:
+            return False
+        self.execute(
+            "UPDATE events SET started_at=? WHERE id=?", (utcnow_iso(), event_id)
+        )
+        return True
+
+    def record_votes(self, event_id: int, member_id: int,
+                     scores: dict[int, int]) -> int:
+        """One member's card, in one go: every bottle they scored, replacing
+        whatever they said last time.
+
+        Keyed on the event as well as the bottle, so a stray id from a form
+        cannot drop a score onto another evening's wine. A bottle they left
+        blank is simply absent from `scores` — and is *removed* if they had
+        scored it before, because clearing a box has to mean something.
+        """
+        written = 0
+        for wine_id, score in scores.items():
+            belongs = self.query_one(
+                "SELECT id FROM event_wines WHERE id=? AND event_id=?",
+                (wine_id, event_id),
+            )
+            if belongs is None:
+                continue
+            self.execute(
+                """INSERT INTO event_votes (event_wine_id, member_id, score, voted_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(event_wine_id, member_id) DO UPDATE SET
+                       score=excluded.score, voted_at=excluded.voted_at""",
+                (wine_id, member_id, score, utcnow_iso()),
+            )
+            written += 1
+        self.execute(
+            """DELETE FROM event_votes
+               WHERE member_id=?
+                 AND event_wine_id IN (SELECT id FROM event_wines WHERE event_id=?)
+                 AND event_wine_id NOT IN (%s)"""
+            % (", ".join("?" * len(scores)) or "NULL"),
+            (member_id, event_id, *scores.keys()),
+        )
+        return written
+
     def promote_event(self, event_id: int) -> int | None:
         """File a held event where the club keeps that kind of thing.
 
@@ -832,13 +912,25 @@ class Database:
         for wine in self.query(
             "SELECT * FROM event_wines WHERE event_id=? ORDER BY position, id", (event_id,)
         ):
-            self.execute(
+            wine_id = self.execute(
                 """INSERT INTO wines (name, producer, vintage, country, region, grape,
                                       price_nok, tasting_id, brought_by, added_by, added_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
                 (wine["name"], wine["producer"], wine["vintage"], wine["country"],
                  wine["region"], wine["grape"], wine["price_nok"], tasting_id,
                  wine["brought_by"], utcnow_iso()),
+            )
+            # What the room said on the night, moved from the staging table to
+            # the one the club's whole history lives in. The two tables have
+            # the same shape precisely so this is a copy and not a conversion.
+            self.execute(
+                """INSERT INTO wine_ratings (wine_id, member_id, score, notes, rated_at)
+                   SELECT ?, member_id, score, notes, voted_at
+                   FROM event_votes WHERE event_wine_id=?
+                   ON CONFLICT(wine_id, member_id) DO UPDATE SET
+                       score=excluded.score, notes=excluded.notes,
+                       rated_at=excluded.rated_at""",
+                (wine_id, wine["id"]),
             )
         self.execute("UPDATE events SET tasting_id=? WHERE id=?", (tasting_id, event_id))
         return tasting_id

@@ -10,6 +10,8 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -677,6 +679,17 @@ SOON = "2099-10-12T19:00"
 GONE = "2020-03-05T19:00"
 
 
+def tonight(hour: str = "19:00") -> str:
+    """Today's date in the club's timezone, as the form writes it.
+
+    An evening can only be started on its own day, so a test about scoring one
+    has to date it today — which is what those tests always meant, even while
+    they said 2099. `SOON` stays for the diary tests, where being in the future
+    is the whole point.
+    """
+    return f"{datetime.now(ZoneInfo('Europe/Oslo')).date().isoformat()}T{hour}"
+
+
 def make_event(client, when=SOON, theme="Moden Piemonte", **extra):
     data = {"theme": theme, "starts_at": when, "location": "Thomas's", "host": "Morten"}
     return client.post("/events", data={**data, **extra}, follow_redirects=False)
@@ -797,7 +810,7 @@ def test_a_held_evening_moves_into_the_archive(signed_in, cellar):
     signed_in.post(f"/events/{event_id}/wines", data={
         "name": "Dom. Santa Duc", "vintage": "2019", "brought_by": "Morten",
     })
-    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/close")
 
     (tasting,) = cellar.query("SELECT * FROM tastings WHERE theme = 'Sørlige Rhône'")
     assert (tasting["year"], tasting["month"]) == (2020, 3)
@@ -811,8 +824,8 @@ def test_an_evening_cannot_be_archived_twice(signed_in, cellar):
     make_event(signed_in, when=GONE, theme="Sørlige Rhône")
     event_id = only_event(cellar)["id"]
     signed_in.post(f"/events/{event_id}/wines", data={"name": "Dom. Santa Duc"})
-    signed_in.post(f"/events/{event_id}/promote")
-    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/close")
+    signed_in.post(f"/events/{event_id}/close")
 
     assert len(cellar.query("SELECT * FROM tastings WHERE theme = 'Sørlige Rhône'")) == 1
     assert len(cellar.query("SELECT * FROM wines WHERE name = 'Dom. Santa Duc'")) == 1
@@ -981,7 +994,7 @@ def test_a_blind_evening_does_not_name_its_bottles(signed_in, cellar):
 
 def test_archiving_a_blind_evening_names_them(signed_in, cellar):
     event_id = blind_with_bottles(signed_in, cellar)
-    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/close")
     page = signed_in.get(f"/events/{event_id}").text
     assert "Vega Sicilia Unico" in page
     assert "Wine 1" not in page
@@ -1011,7 +1024,7 @@ def test_archiving_a_trip_puts_it_with_the_others(signed_in, cellar):
     kinded(signed_in, "trip", theme="Brugge", starts_at="2027-03-06T08:00",
            ends_at="2027-03-08T20:00", country="Belgium", location="Brugge")
     event_id = latest(cellar)["id"]
-    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/close")
 
     trip = cellar.query_one("SELECT * FROM trips WHERE year = 2027")
     assert trip["country"] == "Belgium"
@@ -1026,8 +1039,8 @@ def test_a_trip_is_not_archived_twice(signed_in, cellar):
     kinded(signed_in, "trip", theme="Brugge", starts_at="2027-03-06T08:00",
            country="Belgium")
     event_id = latest(cellar)["id"]
-    signed_in.post(f"/events/{event_id}/promote")
-    signed_in.post(f"/events/{event_id}/promote")
+    signed_in.post(f"/events/{event_id}/close")
+    signed_in.post(f"/events/{event_id}/close")
     assert len(cellar.query("SELECT * FROM trips WHERE year = 2027")) == 1
 
 
@@ -1335,3 +1348,331 @@ def test_an_unscored_evening_keeps_its_pouring_order(signed_in, cellar):
     page = signed_in.get(f"/wine/tastings/{tasting}").text
     assert [n for n in poured if n in page] == poured, "all three are on the page"
     assert [page.index(n) for n in poured] == sorted(page.index(n) for n in poured)
+
+
+# -- the voting page --------------------------------------------------------
+#
+# The first thing the app does *during* an evening. What these pin is the line
+# between the staging tables and the cellar: a card can be changed all night,
+# and nothing reaches fifteen years of history until somebody closes the
+# evening.
+
+
+def ready_to_vote(client, db, kind="tasting", bottles=("Alfa", "Beta", "Gamma")):
+    """An evening with bottles, started, waiting for cards."""
+    kinded(client, kind, theme=f"Scoring {kind}", starts_at=tonight())
+    event_id = latest(db)["id"]
+    for name in bottles:
+        client.post(f"/events/{event_id}/wines", data={"name": name})
+    client.post(f"/events/{event_id}/start")
+    return event_id
+
+
+def bottles_of(db, event_id):
+    return [r["id"] for r in db.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position, id", (event_id,))]
+
+
+def card(db, event_id, scores):
+    """A form card keyed the way the page keys it: score-<event_wine_id>.
+
+    `scores` is {which bottle, counting from zero: what to give it}.
+    """
+    ids = bottles_of(db, event_id)
+    return {f"score-{ids[i]}": str(n) for i, n in scores.items()}
+
+
+def votes_of(db, event_id, member="Morten"):
+    return {r["name"]: r["score"] for r in db.query(
+        """SELECT w.name, v.score FROM event_votes v
+           JOIN event_wines w ON w.id = v.event_wine_id
+           JOIN wine_members m ON m.id = v.member_id
+           WHERE w.event_id=? AND m.name=? ORDER BY w.position""",
+        (event_id, member))}
+
+
+def as_member(client, name, db):
+    member = db.query_one("SELECT id FROM wine_members WHERE name=?", (name,))
+    client.post("/whoami", data={"member_id": member["id"]})
+    return client
+
+
+# -- when it is open --------------------------------------------------------
+
+
+def test_an_evening_must_be_started_before_it_is_scored(signed_in, cellar):
+    kinded(signed_in, "tasting", theme="Not yet", starts_at=tonight())
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Alfa"})
+    response = signed_in.get(f"/events/{event_id}/vote")
+    assert response.status_code == 409
+    assert "has not started yet" in response.text
+
+
+def test_starting_needs_a_bottle_to_score(signed_in, cellar):
+    kinded(signed_in, "tasting", theme="Empty", starts_at=tonight())
+    event_id = latest(cellar)["id"]
+    response = signed_in.post(f"/events/{event_id}/start")
+    assert response.status_code == 400
+    assert "at least one bottle" in response.text
+    assert cellar.query_one("SELECT started_at FROM events WHERE id=?", (event_id,))[0] is None
+
+
+def test_starting_takes_you_to_the_scoring_page(signed_in, cellar):
+    kinded(signed_in, "tasting", theme="Off we go", starts_at=tonight())
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Alfa"})
+    response = signed_in.post(f"/events/{event_id}/start", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/events/{event_id}/vote"
+    assert cellar.query_one("SELECT started_at FROM events WHERE id=?", (event_id,))[0]
+
+
+def test_a_trip_is_not_scored(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Bilbao", country="Spain", starts_at=SOON)
+    event_id = latest(cellar)["id"]
+    assert signed_in.post(f"/events/{event_id}/start").status_code == 400
+    assert signed_in.get(f"/events/{event_id}/vote").status_code == 409
+
+
+def test_a_closed_evening_cannot_be_scored_again(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/close")
+    response = signed_in.get(f"/events/{event_id}/vote")
+    assert response.status_code == 409
+    assert "in the cellar now" in response.text
+
+
+# -- casting a card ---------------------------------------------------------
+
+
+def test_a_card_lands_in_the_staging_table_and_nowhere_else(signed_in, cellar):
+    """The whole point of event_votes: the cellar is untouched until close."""
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88, 1: 91}))
+    assert votes_of(cellar, event_id) == {"Alfa": 88, "Beta": 91}
+    assert cellar.query("SELECT * FROM wine_ratings WHERE wine_id > 3") == []
+    assert cellar.query("SELECT * FROM wines WHERE name='Alfa'") == []
+
+
+def test_a_wine_you_skipped_records_nothing(signed_in, cellar):
+    """85 is marked, never pre-selected, so a blank box is a blank box."""
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88}))
+    assert votes_of(cellar, event_id) == {"Alfa": 88}
+
+
+def test_an_empty_card_records_nothing_at_all(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data={})
+    assert votes_of(cellar, event_id) == {}
+
+
+def test_submitting_again_replaces_your_own_card(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88, 1: 91}))
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 70}))
+    # Beta is gone, not left at 91: clearing a box has to mean something.
+    assert votes_of(cellar, event_id) == {"Alfa": 70}
+
+
+def test_one_card_does_not_disturb_another(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88}))
+    as_member(signed_in, "Tore", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 60}))
+    assert votes_of(cellar, event_id, "Morten") == {"Alfa": 88}
+    assert votes_of(cellar, event_id, "Tore") == {"Alfa": 60}
+
+
+def test_the_typed_box_wins_over_the_dropdown(signed_in, cellar):
+    """They are one number; the person who typed it meant it."""
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    ids = bottles_of(cellar, event_id)
+    signed_in.post(f"/events/{event_id}/vote",
+                   data={f"score-{ids[0]}": "85", f"typed-{ids[0]}": "93"})
+    assert votes_of(cellar, event_id) == {"Alfa": 93}
+
+
+@pytest.mark.parametrize("given, says", [("0", "not on the scale"),
+                                         ("101", "not on the scale"),
+                                         ("ninety", "not a score")])
+def test_a_score_off_the_scale_is_refused(signed_in, cellar, given, says):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    ids = bottles_of(cellar, event_id)
+    response = signed_in.post(
+        f"/events/{event_id}/vote",
+        data={f"score-{ids[0]}": "88", f"score-{ids[1]}": given},
+    )
+    assert response.status_code == 400
+    assert says in response.text
+    assert votes_of(cellar, event_id) == {}, "nothing is written when part of it is wrong"
+    assert 'value="88"' in response.text, "and the rest of the card is still there"
+
+
+def test_you_have_to_say_who_you_are_before_you_score(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    response = signed_in.post(f"/events/{event_id}/vote",
+                              data=card(cellar, event_id, {0: 88}))
+    assert response.status_code == 400
+    assert "who you are" in response.text
+    assert cellar.query("SELECT * FROM event_votes") == []
+
+
+def test_the_page_says_who_has_submitted_and_no_more(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 93}))
+    page = signed_in.get(f"/events/{event_id}/vote").text
+    submitted = page.split("<h2>Submitted</h2>")[1]
+    assert "Morten" in submitted
+    assert "93" not in submitted, "a score before the reveal is the one thing forbidden"
+
+
+# -- blind ------------------------------------------------------------------
+
+
+def test_a_blind_evening_is_scored_without_names(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar, kind="blind",
+                             bottles=("Vega Sicilia Unico", "Pingus Ribera"))
+    as_member(signed_in, "Morten", cellar)
+    page = signed_in.get(f"/events/{event_id}/vote").text
+    assert "Vega Sicilia Unico" not in page
+    assert "Pingus Ribera" not in page
+    assert "Wine 1" in page and "Wine 2" in page
+
+
+# -- closing ----------------------------------------------------------------
+
+
+def test_closing_carries_the_scores_into_the_cellar(signed_in, cellar):
+    """What the evening was for: staging tables to fifteen years of history."""
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88, 1: 91}))
+    as_member(signed_in, "Tore", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 84}))
+
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    scored = cellar.query(
+        """SELECT w.name, m.name AS who, r.score FROM wine_ratings r
+           JOIN wines w ON w.id = r.wine_id JOIN wine_members m ON m.id = r.member_id
+           WHERE w.tasting_id=? ORDER BY w.id, m.name""",
+        (tasting_id,),
+    )
+    assert [(r["name"], r["who"], r["score"]) for r in scored] == [
+        ("Alfa", "Morten", 88), ("Alfa", "Tore", 84), ("Beta", "Morten", 91),
+    ]
+    page = signed_in.get(f"/wine/tastings/{tasting_id}").text
+    assert "86.0" in page, "Alfa's average, on the tasting page"
+
+
+def test_closing_twice_changes_nothing(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 88}))
+    signed_in.post(f"/events/{event_id}/close")
+    before = cellar.query_one("SELECT COUNT(*) n FROM wine_ratings")["n"]
+    signed_in.post(f"/events/{event_id}/close")
+    assert cellar.query_one("SELECT COUNT(*) n FROM wine_ratings")["n"] == before
+
+
+def test_a_blind_evening_is_named_when_it_closes(signed_in, cellar):
+    event_id = ready_to_vote(signed_in, cellar, kind="blind",
+                             bottles=("Vega Sicilia Unico",))
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 95}))
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    page = signed_in.get(f"/wine/tastings/{tasting_id}").text
+    assert "Vega Sicilia Unico" in page and "95" in page
+
+
+# -- an evening cannot start before its own day -----------------------------
+#
+# Starting opens the scoring page and does not come back, so a stray click on
+# next January's row in the diary must not be able to do it. Running early on
+# the night itself is normal, though — the club sits down at seven whatever the
+# diary says — so the gate is the calendar day, not the hour.
+
+
+def with_bottle(client, db, when, theme="Dated"):
+    kinded(client, "tasting", theme=theme, starts_at=when)
+    event_id = latest(db)["id"]
+    client.post(f"/events/{event_id}/wines", data={"name": "Alfa"})
+    return event_id
+
+
+def started(db, event_id):
+    return db.query_one("SELECT started_at FROM events WHERE id=?", (event_id,))[0]
+
+
+def test_tomorrows_evening_cannot_be_started_today(signed_in, cellar):
+    tomorrow = (datetime.now(ZoneInfo("Europe/Oslo")).date() + timedelta(days=1))
+    event_id = with_bottle(signed_in, cellar, f"{tomorrow.isoformat()}T19:00")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "disabled" in page.split("Start event")[0][-120:], "the button is greyed"
+    assert "you can start it on" in page.lower(), "and the page says when"
+
+    response = signed_in.post(f"/events/{event_id}/start")
+    assert response.status_code == 400
+    assert "Too early" in response.text
+    assert started(cellar, event_id) is None
+
+
+def test_todays_evening_starts_however_early_in_the_day(signed_in, cellar):
+    """Nine in the morning for an evening at seven: fine, it is the day."""
+    event_id = with_bottle(signed_in, cellar, tonight("23:30"))
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "disabled" not in page.split("Start event")[0][-120:]
+    response = signed_in.post(f"/events/{event_id}/start", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/events/{event_id}/vote"
+    assert started(cellar, event_id)
+
+
+def test_an_evening_whose_day_has_passed_still_starts(signed_in, cellar):
+    """Late is not too early. The rule is a floor, not a window."""
+    event_id = with_bottle(signed_in, cellar, GONE)
+    assert signed_in.post(f"/events/{event_id}/start",
+                          follow_redirects=False).status_code == 303
+    assert started(cellar, event_id)
+
+
+# -- the boundary the whole rule turns on -----------------------------------
+
+
+@pytest.mark.parametrize("starts_at, now, expected", [
+    # 00:30 on the 7th in Oslo is 22:30 on the 6th in UTC. Compare the stored
+    # instants and this evening opens a day early; compare local dates and it
+    # does not. This is the test that fails if the timezone is dropped.
+    ("2026-10-06T22:30:00+00:00", "2026-10-06T20:00:00+00:00", False),
+    # The same evening, once its own day has actually begun locally.
+    ("2026-10-06T22:30:00+00:00", "2026-10-06T22:05:00+00:00", True),
+    # 23:30 on the 6th in Oslo, checked at teatime that day.
+    ("2026-10-06T21:30:00+00:00", "2026-10-06T14:00:00+00:00", True),
+    ("2026-10-08T17:00:00+00:00", "2026-10-06T14:00:00+00:00", False),
+])
+def test_the_day_is_the_clubs_day_not_utcs(starts_at, now, expected):
+    from datetime import datetime as dt
+
+    from web.routes.events import _day_has_come
+
+    assert _day_has_come({"starts_at": starts_at}, ZoneInfo("Europe/Oslo"),
+                         dt.fromisoformat(now)) is expected
+
+
+def test_a_date_nobody_can_read_does_not_lock_the_evening_shut():
+    """It cannot happen. If it ever did, refusing would be the worse failure."""
+    from web.routes.events import _day_has_come
+
+    assert _day_has_come({"starts_at": "not a date"}, ZoneInfo("Europe/Oslo")) is True

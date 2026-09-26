@@ -258,6 +258,38 @@ def event_wines(db: Database, event_id: int) -> list[sqlite3.Row]:
     )
 
 
+def my_votes(db: Database, event_id: int, member_id: int) -> dict[int, int]:
+    """What this member has already said, so the page comes back as they left it."""
+    return {
+        row["event_wine_id"]: row["score"]
+        for row in db.query(
+            """SELECT v.event_wine_id, v.score FROM event_votes v
+               JOIN event_wines w ON w.id = v.event_wine_id
+               WHERE w.event_id = ? AND v.member_id = ?""",
+            (event_id, member_id),
+        )
+    }
+
+
+def who_has_voted(db: Database, event_id: int) -> list[str]:
+    """The names, and only the names.
+
+    The host needs to know when everyone is done. Nobody may see a number
+    before the reveal, least of all on a blind evening, so no score comes back
+    from here — not even an average.
+    """
+    return [
+        row["name"]
+        for row in db.query(
+            """SELECT DISTINCT m.name FROM event_votes v
+               JOIN event_wines w ON w.id = v.event_wine_id
+               JOIN wine_members m ON m.id = v.member_id
+               WHERE w.event_id = ? ORDER BY m.name""",
+            (event_id,),
+        )
+    ]
+
+
 # -- trips ------------------------------------------------------------------
 
 

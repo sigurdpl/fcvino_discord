@@ -127,6 +127,21 @@ def fmt_year(stamp: str | None, tz: str = "Europe/Oslo") -> str:
         return ""
 
 
+def fmt_day(stamp: str | None, tz: str = "Europe/Oslo") -> str:
+    """The day an instant falls on locally: 'Tue 6 October'.
+
+    `fmt_when` with the time taken off, for the places where the hour is not
+    the point — when an evening's own day arrives, for one.
+    """
+    if not stamp:
+        return "—"
+    try:
+        when = parse_utc(stamp).astimezone(ZoneInfo(tz))
+    except (ValueError, ZoneInfoNotFoundError):
+        return stamp
+    return f"{when:%a} {when.day} {when:%B}"
+
+
 def fmt_local_input(stamp: str | None, tz: str = "Europe/Oslo") -> str:
     """The same instant as a <input type="datetime-local"> wants it."""
     if not stamp:
@@ -142,6 +157,7 @@ templates.env.globals["fmt_month"] = fmt_month
 templates.env.globals["fmt_when"] = fmt_when
 templates.env.globals["fmt_span"] = fmt_span
 templates.env.globals["fmt_year"] = fmt_year
+templates.env.globals["fmt_day"] = fmt_day
 templates.env.globals["fmt_where"] = fmt_where
 templates.env.globals["home_country"] = HOME_COUNTRY
 templates.env.globals["fmt_local_input"] = fmt_local_input

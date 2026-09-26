@@ -161,6 +161,52 @@
 
 {% endif %}
 
+{#- The evening itself. Scoring is the one thing this app does while a tasting
+    is happening rather than afterwards, so it gets its own section above the
+    archiving, and it is offered whatever the clock says: an evening that has
+    started can be closed the same night. -#}
+{% if pours and not event['tasting_id'] %}
+<section class="card">
+  {% if event['started_at'] %}
+    <h2>Voting is open</h2>
+    <p class="muted">
+      Everyone scores the {{ wines | length }} bottle{{ '' if wines | length == 1 else 's' }}
+      on <a href="/events/{{ event['id'] }}/vote">the scoring page</a>, on their own
+      phone. Nothing reaches the cellar until you close the evening.
+    </p>
+    <p><a class="fv-btn" href="/events/{{ event['id'] }}/vote">Open the scoring page →</a></p>
+    <form method="post" action="/events/{{ event['id'] }}/close">
+      <button type="submit"
+              onclick="return confirm('Close {{ event['theme'] }}? Its bottles and every score go into the cellar.')">Close event</button>
+    </form>
+  {% else %}
+    <h2>The evening</h2>
+    <p class="muted">
+      {%- if wines -%}
+        Starting it opens the scoring page, where everyone gives each of the
+        {{ wines | length }} bottle{{ '' if wines | length == 1 else 's' }} a mark out of a hundred.
+      {%- else -%}
+        Line up the bottles first — there is nothing to score yet.
+      {%- endif -%}
+    </p>
+    {% if wines %}
+    {#- Grey until the evening's own day. Starting opens the scoring page and
+        does not come back, so a stray click on next January's row should not
+        be able to do it. The route refuses the same press. -#}
+    <form method="post" action="/events/{{ event['id'] }}/start">
+      <button type="submit" {{ 'disabled' if too_early }}>Start event</button>
+    </form>
+    {% if too_early %}
+      <p class="muted small">
+        Not yet — you can start it on {{ fmt_day(event['starts_at']) }},
+        any time that day.
+      </p>
+    {% endif %}
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
 {#- Filing it where the club keeps that kind of thing: a tasting joins the
     cellar's archive, a trip joins the seventeen. Offered once the thing has
     happened, and only once. A free-form event has no archive to go to. -#}
@@ -191,9 +237,11 @@
         on this page{% endif %}.
       {%- endif -%}
     </p>
-    <form method="post" action="/events/{{ event['id'] }}/promote">
+    {% if not event['started_at'] %}
+    <form method="post" action="/events/{{ event['id'] }}/close">
       <button type="submit">Move to the archive</button>
     </form>
+    {% endif %}
   {% endif %}
 </section>
 {% endif %}

@@ -245,9 +245,32 @@ def export_trips(db: Database) -> dict:
 # -- the diary --------------------------------------------------------------
 
 EVENT_FIELDS = ("kind", "theme", "location", "host", "country", "starts_at",
-                "ends_at", "notes", "created_by")
+                "ends_at", "notes", "created_by", "started_at")
 EVENT_WINE_FIELDS = ("producer", "vintage", "country", "region", "grape",
                      "price_nok", "brought_by")
+
+
+def _votes(db: Database, event_wine_id: int) -> dict[str, Any]:
+    """What the room has said about one bottle so far, by member name.
+
+    Always the long form, unlike a finished bottle's `scores:`. There is
+    nothing to hoist `voted_at` to: people submit their cards when they submit
+    them, which is the one fact an evening in progress actually records. It
+    becomes the rating's `rated_at` when the evening is closed.
+    """
+    cast: dict[str, Any] = {}
+    for row in db.query(
+        """SELECT m.name, v.score, v.notes, v.voted_at
+           FROM event_votes v JOIN wine_members m ON m.id = v.member_id
+           WHERE v.event_wine_id = ? ORDER BY m.name""",
+        (event_wine_id,),
+    ):
+        vote: dict[str, Any] = {"score": row["score"]}
+        if row["notes"]:
+            vote["notes"] = row["notes"]
+        vote["voted_at"] = row["voted_at"]
+        cast[row["name"]] = vote
+    return cast
 
 
 def export_events(db: Database) -> dict:
@@ -272,6 +295,11 @@ def export_events(db: Database) -> dict:
         ):
             lined_up: dict[str, Any] = {"name": wine["name"], **_fields(wine, EVENT_WINE_FIELDS)}
             lined_up["added_at"] = wine["added_at"]
+            # An evening caught mid-vote. The same `scores:` shape a finished
+            # bottle has in wines.yml, so there is one idea here and not two.
+            cast = _votes(db, wine["id"])
+            if cast:
+                lined_up["scores"] = cast
             wines.append(lined_up)
         if wines:
             event["wines"] = wines
