@@ -52,10 +52,16 @@ class Config:
     web_secret: str
     access_trusted: bool
     access_members: dict[str, str]
+    anthropic_key: str | None
 
     @property
     def has_football(self) -> bool:
         return bool(self.football_token)
+
+    @property
+    def has_label_reading(self) -> bool:
+        """Whether a bottle can be photographed rather than typed in."""
+        return bool(self.anthropic_key)
 
 
 def _require(name: str, hint: str) -> str:
@@ -175,6 +181,10 @@ def load(*, require_discord: bool = True, require_web: bool = False) -> Config:
     # sessions across restarts, and do set it once this is hosted anywhere.
     web_secret = (os.getenv("WEB_SESSION_SECRET") or "").strip() or secrets.token_hex(32)
 
+    # Without it the camera is simply not offered, the way /football disappears
+    # without its token. Typing a bottle in never depends on it.
+    anthropic_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip() or None
+
     return Config(
         discord_token=token,
         guild_id=guild_id,
@@ -189,4 +199,5 @@ def load(*, require_discord: bool = True, require_web: bool = False) -> Config:
         web_secret=web_secret,
         access_trusted=access_trusted,
         access_members=access_members,
+        anthropic_key=anthropic_key,
     )

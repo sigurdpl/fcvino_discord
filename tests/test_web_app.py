@@ -85,6 +85,7 @@ def client(cellar, tmp_path):
         web_password=PASSWORD,
         web_secret="test-secret-not-a-real-one",
         football_token=None,          # no network from the test suite
+        anthropic_key=None,           # nor for reading a label
         # Pinned, not inherited: config.load reads the developer's own .env, and
         # once that has FCVINO_ACCESS=1 for the real deployment this fixture
         # would quietly become the Access one — right down to a Secure-only
@@ -1112,3 +1113,200 @@ def test_an_end_on_the_same_day_is_an_end_time(signed_in, cellar):
     page = signed_in.get("/events").text
     assert "18:00–22:59" in page
     assert "28–28" not in page
+
+
+# -- photographing the label ------------------------------------------------
+#
+# No test calls the API. The route reaches the reader through the module, so
+# these replace it: what matters here is that a read fills the form in and
+# writes nothing, and that every way it can fail leaves the bottle addable by
+# hand.
+
+JPEG = ("bottle.jpg", b"not really a jpeg, and never looked at", "image/jpeg")
+
+
+@pytest.fixture()
+def with_camera(cellar, tmp_path):
+    """The app as it runs with a key configured — the only way to reach it."""
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3",
+        web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one",
+        football_token=None,
+        access_trusted=False,
+        access_members={},
+        anthropic_key="test-key-never-used",
+    )
+    with TestClient(create_app(cfg)) as c:
+        c.post("/login", data={"password": PASSWORD})
+        yield c
+
+
+@pytest.fixture()
+def evening(with_camera, cellar):
+    """An evening with bottles, ready for one to be photographed onto it."""
+    make_event(with_camera, theme="Labels")
+    return latest(cellar)["id"]
+
+
+def reads(monkeypatch, **fields):
+    """Stand the reader down and have it return this label.
+
+    Every field is filled in, because the model's are required and nullable —
+    it has to say "the label doesn't give one" rather than quietly leave it out.
+    """
+    from web import label as label_module
+
+    blank = dict.fromkeys(label_module.Label.model_fields)
+
+    def fake(image, media_type, api_key):
+        assert image, "the photo should reach the reader"
+        return label_module.Label(**{**blank, **fields})
+
+    monkeypatch.setattr(label_module, "read_label", fake)
+
+
+def refuses(monkeypatch, message="Couldn't read a wine off that one."):
+    from web import label as label_module
+
+    def fake(image, media_type, api_key):
+        raise label_module.LabelUnreadable(message)
+
+    monkeypatch.setattr(label_module, "read_label", fake)
+
+
+def never_called(monkeypatch):
+    from web import label as label_module
+
+    def fake(image, media_type, api_key):
+        raise AssertionError("the reader was called; it should have been refused first")
+
+    monkeypatch.setattr(label_module, "read_label", fake)
+
+
+def shoot(client, event_id, photo=JPEG):
+    return client.post(f"/events/{event_id}/wines/label", files={"photo": photo})
+
+
+def test_the_camera_is_offered_where_a_key_is_configured(with_camera, evening):
+    assert "Photograph the label" in with_camera.get(f"/events/{evening}").text
+
+
+def test_without_a_key_the_page_is_as_it_was(signed_in, cellar):
+    """The feature follows its configuration, the way /football already does."""
+    make_event(signed_in, theme="No camera")
+    page = signed_in.get(f"/events/{latest(cellar)['id']}").text
+    assert "Photograph the label" not in page
+    assert "Add" in page, "typing a bottle in never depends on the key"
+
+
+def test_without_a_key_the_route_is_not_there(signed_in, cellar):
+    make_event(signed_in, theme="No camera")
+    assert shoot(signed_in, latest(cellar)["id"]).status_code == 404
+
+
+def test_a_read_label_fills_the_form_in(with_camera, evening, monkeypatch):
+    reads(monkeypatch, name="Produttori del Barbaresco 2019", producer="Produttori",
+          vintage=2019, country="Italy", region="Barbaresco", grape="Nebbiolo")
+    page = shoot(with_camera, evening).text
+    for value in ("Produttori del Barbaresco 2019", "Produttori", "2019",
+                  "Italy", "Barbaresco", "Nebbiolo"):
+        assert f'value="{value}"' in page
+
+
+def test_reading_a_label_writes_nothing(with_camera, evening, cellar, monkeypatch):
+    """A vision model reading a decorative label can be confidently wrong, so
+    the bottle only exists once somebody has pressed Add."""
+    reads(monkeypatch, name="Ch. Musar 2005")
+    assert shoot(with_camera, evening).status_code == 200
+    assert cellar.query("SELECT * FROM event_wines") == []
+
+
+def field(page, name):
+    """The value attribute of the add-a-bottle form's `name` box.
+
+    Scoped to that form: the event's own details are edited further up the page
+    and have a country box of their own, which already carries "Norway".
+    """
+    form = page.split('/wines">')[-1]     # the add-a-bottle form's own action
+    tag = re.search(rf'<input name="{name}"[^>]*>', form, re.S)
+    assert tag, f"no {name} box on the page"
+    found = re.search(r'value="([^"]*)"', tag.group(0))
+    return found.group(1) if found else ""
+
+
+def test_what_the_label_did_not_say_stays_empty(with_camera, evening, monkeypatch):
+    """A guessed vintage is worse than a blank box: the club records vintages."""
+    reads(monkeypatch, name="Domaine sans millésime")
+    page = shoot(with_camera, evening).text
+    assert 'value="Domaine sans millésime"' in page
+    assert field(page, "vintage") == ""
+    assert field(page, "country") == ""
+    assert field(page, "grape") == ""
+
+
+def test_the_filled_form_still_adds_the_bottle(with_camera, evening, cellar, monkeypatch):
+    """What the read is for — the same form and the same write as by hand."""
+    reads(monkeypatch, name="Pingus Ribera", vintage=2019)
+    shoot(with_camera, evening)
+    with_camera.post(f"/events/{evening}/wines",
+                     data={"name": "Pingus Ribera", "vintage": "2019"})
+    row = cellar.query("SELECT * FROM event_wines")[0]
+    assert (row["name"], row["vintage"]) == ("Pingus Ribera", 2019)
+
+
+def test_a_label_it_cannot_read_says_so(with_camera, evening, monkeypatch):
+    refuses(monkeypatch)
+    response = shoot(with_camera, evening)
+    assert response.status_code == 400
+    assert "Couldn&#39;t read a wine off that one." in response.text
+    assert "Photograph the label" in response.text, "and you can try another photo"
+    assert 'name="name"' in response.text, "or type it in"
+
+
+def test_something_that_is_not_a_photo_is_refused_before_any_call(
+    with_camera, evening, monkeypatch
+):
+    never_called(monkeypatch)
+    response = shoot(with_camera, evening, ("notes.pdf", b"%PDF-1.4", "application/pdf"))
+    assert response.status_code == 400
+    assert "isn&#39;t a photo" in response.text
+
+
+def test_an_oversized_photo_is_refused_before_any_call(with_camera, evening, monkeypatch):
+    from web import label as label_module
+
+    never_called(monkeypatch)
+    huge = b"\xff" * (label_module.MAX_BYTES + 1)
+    response = shoot(with_camera, evening, ("huge.jpg", huge, "image/jpeg"))
+    assert response.status_code == 400
+    assert "too big" in response.text
+
+
+def test_no_photo_at_all(with_camera, evening, monkeypatch):
+    never_called(monkeypatch)
+    response = with_camera.post(f"/events/{evening}/wines/label", data={})
+    assert response.status_code == 400
+    assert "No photo came through." in response.text
+
+
+def test_a_photo_for_an_evening_that_is_not_there(with_camera, monkeypatch):
+    never_called(monkeypatch)
+    assert shoot(with_camera, 9999).status_code == 404
+
+
+def test_the_camera_needs_a_login(cellar, tmp_path, monkeypatch):
+    """Nine people's evenings, and a key that costs money on every call."""
+    never_called(monkeypatch)
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "web.sqlite3", web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one", football_token=None,
+        access_trusted=False, access_members={}, anthropic_key="test-key-never-used",
+    )
+    with TestClient(create_app(cfg)) as c:
+        response = c.post("/events/1/wines/label", files={"photo": JPEG},
+                          follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"

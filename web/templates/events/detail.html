@@ -116,16 +116,36 @@
 
   {#- The cellar's own fields, so a bottle needs describing once and not twice
       when the evening moves into the archive. Only the name is required. -#}
-  <details class="filters" {{ 'open' if error }}>
+  <details class="filters" {{ 'open' if error or prefill }}>
     <summary>Add a bottle</summary>
+
+    {#- Its own form, above the real one: it fills the boxes below in and writes
+        nothing. Shown only where a key is configured; without one the bottle is
+        typed in, which is the path that cannot fail. -#}
+    {% if label_reading %}
+    <form method="post" action="/events/{{ event['id'] }}/wines/label"
+          enctype="multipart/form-data" class="shot">
+      <label>Photograph the label
+        <input type="file" name="photo" accept="image/*" capture="environment" required>
+      </label>
+      <button type="submit">Read the label</button>
+      <p class="muted small">
+        The photo is sent to be read and then dropped — check what comes back
+        before you add it.
+      </p>
+    </form>
+    {% endif %}
+
     <form method="post" action="/events/{{ event['id'] }}/wines">
       <div class="grid">
-        <label>Wine <input name="name" placeholder="Produttori del Barbaresco" required></label>
-        <label>Producer <input name="producer"></label>
-        <label>Vintage <input name="vintage" inputmode="numeric" placeholder="2019"></label>
-        <label>Country <input name="country"></label>
-        <label>Region <input name="region"></label>
-        <label>Grape <input name="grape"></label>
+        <label>Wine <input name="name" value="{{ prefill.get('name', '') }}"
+                           placeholder="Produttori del Barbaresco" required></label>
+        <label>Producer <input name="producer" value="{{ prefill.get('producer', '') }}"></label>
+        <label>Vintage <input name="vintage" inputmode="numeric" placeholder="2019"
+                              value="{{ prefill.get('vintage', '') }}"></label>
+        <label>Country <input name="country" value="{{ prefill.get('country', '') }}"></label>
+        <label>Region <input name="region" value="{{ prefill.get('region', '') }}"></label>
+        <label>Grape <input name="grape" value="{{ prefill.get('grape', '') }}"></label>
         <label>Price (kr) <input name="price_nok" inputmode="numeric"></label>
         <label>Brought by
           <select name="brought_by">

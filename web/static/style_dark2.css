@@ -360,3 +360,14 @@ button.quiet:hover { background: var(--line); }
    on screen — which is exactly what happened to the event form's per-kind
    fields until this rule existed. */
 [hidden] { display: none !important; }
+
+/* The camera sits above the bottle form, inside the same panel, so it needs a
+   line to separate the thing that fills the boxes in from the boxes. */
+.shot {
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: .6rem;
+  margin: .75rem 0; padding-bottom: .9rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+.shot label { display: flex; flex-direction: column; gap: .2rem; color: var(--muted); }
+.shot input[type="file"] { border: none; padding: 0; background: none; color: var(--muted); }
+.shot p { flex-basis: 100%; margin: 0; }
