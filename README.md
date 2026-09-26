@@ -57,6 +57,16 @@ and dropped; it is never saved or logged, and it costs roughly a tenth of a
 krone a bottle. Without the key the control isn't shown and bottles are typed
 in, which is the path that cannot fail.
 
+**Label pictures** come from Vinmonopolet, which the club buys from anyway.
+Their product search and their image server are both open — no key, no plan —
+so `python scripts/match_vinmonopolet.py --dry-run` asks the catalogue about
+each bottle and stores the product number of the ones it is sure about. A
+picture then shows on a wine's page, in the cellar listing and beside each wine
+while an evening is being scored. It is sure about roughly two bottles in five:
+the misses are wines Polet no longer sells, and it would rather find nothing
+than hang the wrong grower's label on a bottle. Their vintage is whatever they
+are selling now, not the year the club drank.
+
 **To try any of that out** without it landing in the cellar, run
 `python scripts/sandbox.py`. It copies the database to `data/sandbox.sqlite3`
 and serves the app from the copy on port 8001, so you can register an evening,

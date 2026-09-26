@@ -2073,3 +2073,93 @@ def test_an_untouched_evening_says_nothing_and_shows_handles(signed_in, cellar):
     page = signed_in.get(f"/events/{event_id}").text
     assert "⠿" in page
     assert "running order is fixed" not in page
+
+
+# -- label pictures ---------------------------------------------------------
+#
+# The club's own photograph first, because it is the actual bottle at the
+# actual vintage; Vinmonopolet's otherwise, which is whatever year they happen
+# to be selling; and nothing at all when there is neither.
+
+
+def test_a_wine_with_nothing_shows_no_picture(signed_in, cellar):
+    page = signed_in.get("/wine/1").text
+    assert "bilder.vinmonopolet.no" not in page
+    assert 'class="bottle"' not in page, "no broken frame for a bottle we have no picture of"
+
+
+def test_vinmonopolet_gives_a_wine_its_picture(signed_in, cellar):
+    cellar.execute("UPDATE wines SET vmp_code='11201201' WHERE id=1")
+    page = signed_in.get("/wine/1").text
+    assert "https://bilder.vinmonopolet.no/cache/300x300-0/11201201-1.jpg" in page
+
+
+def test_the_clubs_own_photograph_wins(signed_in, cellar):
+    """Theirs is whatever vintage they sell; ours is the bottle on the table."""
+    cellar.execute("UPDATE wines SET vmp_code='11201201', label_photo='abc.jpg' WHERE id=1")
+    page = signed_in.get("/wine/1").text
+    assert "/labels/abc.jpg" in page
+    assert "bilder.vinmonopolet.no" not in page
+
+
+def test_the_cellar_listing_carries_thumbnails(signed_in, cellar):
+    """The one the free-plan worry was about. Matching is a one-off cost, so a
+    listing of sixty wines costs nothing extra."""
+    cellar.execute("UPDATE wines SET vmp_code='11201201' WHERE id=1")
+    rows = signed_in.get("/wine/results", params=BLANK_FILTERS).text
+    assert "https://bilder.vinmonopolet.no/cache/96x96-0/11201201-1.jpg" in rows
+    assert 'class="thumb"' in rows
+
+
+def test_a_blind_evening_shows_no_bottle(signed_in, cellar):
+    """A picture of the label names the wine as surely as printing it would."""
+    event_id = ready_to_vote(signed_in, cellar, kind="blind", bottles=("Vega Sicilia Unico",))
+    wine_id = cellar.query_one("SELECT id FROM event_wines WHERE event_id=?", (event_id,))["id"]
+    cellar.execute("UPDATE event_wines SET vintage=2019 WHERE id=?", (wine_id,))
+    as_member(signed_in, "Morten", cellar)
+    page = signed_in.get(f"/events/{event_id}/vote").text
+    assert "bilder.vinmonopolet.no" not in page
+    assert "Wine 1" in page
+
+
+def test_label_url_reads_both_kinds_of_row(cellar):
+    """A sqlite3.Row on a wine's page, a NamedTuple in the search index."""
+    from web.deps import label_url
+    from web.queries import build_index
+
+    cellar.execute("UPDATE wines SET vmp_code='11201201' WHERE id=1")
+    sql_row = cellar.query_one("SELECT * FROM wines WHERE id=1")
+    index_row = next(r for r in build_index(cellar).rows if r.id == 1)
+    assert label_url(sql_row, 96) == label_url(index_row, 96)
+    assert "11201201" in label_url(index_row, 96)
+
+
+def test_a_new_picture_is_noticed_without_a_restart(signed_in, cellar):
+    """A matching run only sets vmp_code, which moves neither a row count nor a
+    timestamp — so the search index has to be told to look again, or the cellar
+    goes on showing no labels until something unrelated changes."""
+    before = signed_in.get("/wine/results", params=BLANK_FILTERS).text
+    assert "bilder.vinmonopolet.no" not in before
+
+    cellar.execute("UPDATE wines SET vmp_code='11201201' WHERE id=1")
+    after = signed_in.get("/wine/results", params=BLANK_FILTERS).text
+    assert "bilder.vinmonopolet.no" in after
+
+    # And a corrected code, which changes no count at all.
+    cellar.execute("UPDATE wines SET vmp_code='9494305' WHERE id=1")
+    corrected = signed_in.get("/wine/results", params=BLANK_FILTERS).text
+    assert "9494305" in corrected and "11201201" not in corrected
+
+
+def test_an_evenings_page_shows_its_bottles(signed_in, cellar):
+    """The page most worth having pictures on: a row of the night's bottles."""
+    cellar.execute("UPDATE wines SET vmp_code='16724401' WHERE id=1")
+    page = signed_in.get("/wine/tastings/1").text
+    assert "https://bilder.vinmonopolet.no/cache/96x96-0/16724401-1.jpg" in page
+    assert 'class="thumb"' in page
+
+
+def test_an_evening_of_unpictured_bottles_shows_none(signed_in):
+    page = signed_in.get("/wine/tastings/1").text
+    assert "bilder.vinmonopolet.no" not in page
+    assert 'class="thumb"' not in page

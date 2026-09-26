@@ -21,6 +21,7 @@ from .search import Index, Row
 
 WINE_ROWS = """
     SELECT w.id, w.name, w.country, w.region, w.grape, w.vintage, w.brought_by,
+           w.vmp_code, w.label_photo,
            t.theme AS theme, t.year AS year,
            AVG(r.score) AS average, COUNT(r.score) AS ratings
     FROM wines w
@@ -45,18 +46,26 @@ WINE_SCORES = """
 # they were — and a card resubmitted during an evening does exactly that. The
 # average has always had that hole; a named person's number on the page makes
 # it much easier to notice.
+#
+# `pictures` is there for the same reason: a matching run only sets `vmp_code`,
+# which moves neither count nor timestamp, so without it the cellar would go on
+# showing no labels until something else happened to change. The sum catches a
+# code being *corrected* as well as one being added.
 FINGERPRINT = """
-    SELECT (SELECT COUNT(*) FROM wines)            AS wines,
-           (SELECT COUNT(*) FROM wine_ratings)     AS ratings,
-           (SELECT MAX(added_at) FROM wines)       AS latest,
-           (SELECT MAX(rated_at) FROM wine_ratings) AS scored
+    SELECT (SELECT COUNT(*) FROM wines)              AS wines,
+           (SELECT COUNT(*) FROM wine_ratings)       AS ratings,
+           (SELECT MAX(added_at) FROM wines)         AS latest,
+           (SELECT MAX(rated_at) FROM wine_ratings)  AS scored,
+           (SELECT COUNT(vmp_code) || '/' || IFNULL(SUM(CAST(vmp_code AS INTEGER)), 0)
+                || '/' || COUNT(label_photo) FROM wines) AS pictures
 """
 
 
 def fingerprint(db: Database) -> tuple:
     row = db.query_one(FINGERPRINT)
     assert row is not None
-    return (row["wines"], row["ratings"], row["latest"], row["scored"])
+    return (row["wines"], row["ratings"], row["latest"], row["scored"],
+            row["pictures"])
 
 
 def build_index(db: Database) -> Index:
@@ -77,6 +86,8 @@ def build_index(db: Database) -> Index:
             average=row["average"],
             ratings=row["ratings"],
             scores=scores.get(row["id"], {}),
+            vmp_code=row["vmp_code"],
+            label_photo=row["label_photo"],
         )
         for row in db.query(WINE_ROWS)
     )

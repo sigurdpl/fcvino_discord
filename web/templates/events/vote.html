@@ -44,6 +44,9 @@
     <div class="pour">
       <div class="pour-wine">
         <span class="avatar sm">{{ loop.index }}</span>
+        {%- set label = '' if hidden else label_url(w, 96) %}
+        {% if label %}<img class="thumb" src="{{ label }}" alt="" loading="lazy"
+             onerror="this.style.display='none'">{% endif %}
         <div>
           {% if hidden %}
             <div class="name">Wine {{ loop.index }}</div>

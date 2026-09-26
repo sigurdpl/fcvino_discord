@@ -427,3 +427,20 @@ tr.lifting { background: var(--surface-2); opacity: .75; }
 #viewfinder video {
   width: 100%; max-width: 30rem; border-radius: 10px; background: #000;
 }
+
+/* -- label pictures ------------------------------------------------------ */
+
+/* A bottle shot is tall and narrow on a white field. Contain rather than
+   cover, so nothing is cropped off the label, and a soft panel behind it so
+   Vinmonopolet's white background does not glare out of a dark page. */
+.thumb {
+  width: 2rem; height: 2.6rem; object-fit: contain; vertical-align: middle;
+  margin-right: .5rem; border-radius: 4px; background: var(--surface-2);
+}
+.bottle {
+  float: right; width: 7rem; height: 9rem; object-fit: contain;
+  margin: 0 0 .8rem 1rem; border-radius: 10px; background: var(--surface-2);
+}
+@media (max-width: 34rem) {
+  .bottle { width: 5rem; height: 6.5rem; }
+}

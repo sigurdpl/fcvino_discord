@@ -4,6 +4,14 @@
 
 <section class="card">
   <p class="crumb"><a href="/wine">← the cellar</a></p>
+  {%- set label = label_url(wine, 300) %}
+  {% if label %}
+  {#- A picture only when there is one; a bottle without renders nothing at
+      all rather than a broken frame. `onerror` covers the other case: a code
+      Vinmonopolet has since delisted. -#}
+  <img class="bottle" src="{{ label }}" alt="" loading="lazy"
+       onerror="this.style.display='none'">
+  {% endif %}
   <h1>{{ wine['name'] }}</h1>
   <p class="muted">
     {%- set bits = [wine['region'], wine['country']] | select | list -%}
