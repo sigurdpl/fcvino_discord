@@ -407,3 +407,23 @@ button[disabled], button[disabled]:hover {
   background: var(--chip); color: var(--muted);
   border-color: var(--line); cursor: not-allowed;
 }
+
+/* -- reordering the bottles, and the camera ------------------------------- */
+
+/* Only the handle takes the pointer, so a finger dragging here reorders and a
+   finger anywhere else still scrolls the page. */
+/* The whole cell is the grab target, not the glyph alone — and it is the only
+   thing with `touch-action: none`, so a finger dragging here reorders while a
+   finger anywhere else still scrolls the page. */
+.grip {
+  white-space: nowrap; cursor: grab; touch-action: none; user-select: none;
+}
+.grip:active { cursor: grabbing; }
+.handle { padding: 0 .4rem; color: var(--muted); font-size: 1.2rem; }
+button.tiny { padding: .1rem .35rem; font-size: .75rem; line-height: 1; }
+tr.lifting { background: var(--surface-2); opacity: .75; }
+
+#viewfinder { flex-basis: 100%; display: flex; flex-direction: column; gap: .5rem; }
+#viewfinder video {
+  width: 100%; max-width: 30rem; border-radius: 10px; background: #000;
+}

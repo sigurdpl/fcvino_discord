@@ -814,6 +814,63 @@ class Database:
             (event_id, name, *values, seat["next"], utcnow_iso()),
         )
 
+    def update_event_wine(self, event_id: int, wine_id: int, **fields: Any) -> None:
+        """Correct a bottle already on the list. Only the columns passed move.
+
+        The same reading `update_event` gives it: `None` means leave it alone,
+        an empty string clears it. The event id is in the WHERE as it is for
+        deleting, so a stray id cannot reach another evening's bottle.
+        """
+        allowed = ("name", "producer", "vintage", "country", "region", "grape",
+                   "price_nok", "brought_by")
+        changes = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if not changes:
+            return
+        assignments = ", ".join(f"{column}=?" for column in changes)
+        self.execute(
+            f"UPDATE event_wines SET {assignments} WHERE id=? AND event_id=?",
+            (*(v if v != "" else None for v in changes.values()), wine_id, event_id),
+        )
+
+    def reorder_event_wines(self, event_id: int, order: Sequence[int]) -> None:
+        """Put the bottles in the order given, 1…N.
+
+        Ids that belong to another evening — or to none — are ignored rather
+        than trusted, and anything this evening has that the list leaves out
+        keeps its place at the end, so a partial list cannot lose a bottle.
+        """
+        theirs = [
+            row["id"]
+            for row in self.query(
+                "SELECT id FROM event_wines WHERE event_id=? ORDER BY position, id",
+                (event_id,),
+            )
+        ]
+        wanted = [wine_id for wine_id in order if wine_id in theirs]
+        seated = wanted + [wine_id for wine_id in theirs if wine_id not in wanted]
+        self.executemany(
+            "UPDATE event_wines SET position=? WHERE id=? AND event_id=?",
+            [(seat, wine_id, event_id) for seat, wine_id in enumerate(seated, start=1)],
+        )
+
+    def move_event_wine(self, event_id: int, wine_id: int, *, up: bool) -> None:
+        """One step up or down the list, which is the no-JavaScript way to do it."""
+        order = [
+            row["id"]
+            for row in self.query(
+                "SELECT id FROM event_wines WHERE event_id=? ORDER BY position, id",
+                (event_id,),
+            )
+        ]
+        if wine_id not in order:
+            return
+        here = order.index(wine_id)
+        there = here - 1 if up else here + 1
+        if not 0 <= there < len(order):
+            return                      # already at the end it is trying to reach
+        order[here], order[there] = order[there], order[here]
+        self.reorder_event_wines(event_id, order)
+
     def delete_event_wine(self, event_id: int, wine_id: int) -> None:
         """The event id is in the WHERE too, so a stray id cannot reach another
         evening's list."""

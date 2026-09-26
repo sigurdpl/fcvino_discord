@@ -330,6 +330,107 @@ async def read_bottle_label(
     )
 
 
+def _list_is_settled(row) -> str | None:
+    """Why the running order cannot be changed, or None when it can.
+
+    Once the evening has started, moving a bottle renumbers Wine 1…N under
+    people who are halfway through a card — and on a blind evening they would
+    be scoring a different bottle than the one in front of them without any
+    sign of it. The votes themselves stay right, since they key on the row
+    rather than the position, which is exactly what makes it silent.
+    """
+    if row["tasting_id"]:
+        return "This evening is closed."
+    if row["started_at"]:
+        return "Voting has started — the running order is fixed now."
+    return None
+
+
+@router.post("/{event_id}/wines/order")
+async def reorder(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    _: LoggedIn,
+    event_id: int,
+    order: Annotated[str, Form()] = "",
+):
+    """The whole running order at once, as the drag posts it: "3,1,2"."""
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    settled = _list_is_settled(row)
+    if settled:
+        return _detail(request, db, cfg, row, error=settled, status=409)
+    wanted = [int(part) for part in order.split(",") if part.strip().isdigit()]
+    db.reorder_event_wines(event_id, wanted)
+    return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
+# Registered above `/{wine_id}` on purpose: FastAPI matches in the order the
+# routes are declared, and "order" would otherwise be read as a wine id —
+# which fails as a 422 rather than as anything a reader would recognise.
+@router.post("/{event_id}/wines/{wine_id}")
+async def edit_wine(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    _: LoggedIn,
+    event_id: int,
+    wine_id: int,
+    name: Annotated[str, Form()] = "",
+    producer: Annotated[str, Form()] = "",
+    vintage: Annotated[str, Form()] = "",
+    country: Annotated[str, Form()] = "",
+    region: Annotated[str, Form()] = "",
+    grape: Annotated[str, Form()] = "",
+    price_nok: Annotated[str, Form()] = "",
+    brought_by: Annotated[str, Form()] = "",
+):
+    """Correct a bottle already on the list.
+
+    A blind evening's names are not shown until it is closed, and a form
+    prefilled with one would undo that for anybody who opened it — so the page
+    does not offer this, and nor does the route.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    if row["kind"] == "blind" and not row["tasting_id"]:
+        return _detail(request, db, cfg, row, status=400,
+                       error="A blind evening's bottles are named when it closes.")
+    if not name.strip():
+        return _detail(request, db, cfg, row, error="A bottle needs a name.", status=400)
+    db.update_event_wine(
+        event_id, wine_id,
+        name=name.strip(), producer=producer.strip(), vintage=_number(vintage),
+        country=country.strip(), region=region.strip(), grape=grape.strip(),
+        price_nok=_number(price_nok), brought_by=brought_by.strip(),
+    )
+    return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
+@router.post("/{event_id}/wines/{wine_id}/move")
+async def move_wine(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    _: LoggedIn,
+    event_id: int,
+    wine_id: int,
+    direction: Annotated[str, Form()] = "up",
+):
+    """One step, from the ▲▼ buttons — the way that needs no JavaScript."""
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    settled = _list_is_settled(row)
+    if settled:
+        return _detail(request, db, cfg, row, error=settled, status=409)
+    db.move_event_wine(event_id, wine_id, up=direction != "down")
+    return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
 @router.post("/{event_id}/wines/{wine_id}/delete")
 async def remove_wine(request: Request, db: Db, _: LoggedIn, event_id: int, wine_id: int):
     db.delete_event_wine(event_id, wine_id)

@@ -73,15 +73,35 @@
   <h2>The wines{% if hidden %} <span class="pill">blind</span>{% endif %}</h2>
   <div class="scroll">
     <table class="rows">
+      {#- `settled` is the same rule the routes enforce: once anyone is scoring,
+          renumbering Wine 1…N would move the bottles under them. -#}
+      {% set settled = event['started_at'] or event['tasting_id'] %}
       <thead>
         <tr>
+          {% if not settled %}<th></th>{% endif %}
           <th class="num">#</th><th>Wine</th><th>Origin</th>
           <th>Brought by</th><th class="num">Price</th><th></th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="lineup" data-event="{{ event['id'] }}">
         {% for w in wines %}
-        <tr>
+        <tr data-wine="{{ w['id'] }}">
+          {% if not settled %}
+          {#- The handle is the only thing with `touch-action: none`, so a drag
+              starts here and the page still scrolls everywhere else. The arrows
+              beneath it are the mechanism proper: they post a form and work
+              with no JavaScript at all. -#}
+          <td class="nowrap grip">
+            <span class="handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+            <form method="post" action="/events/{{ event['id'] }}/wines/{{ w['id'] }}/move"
+                  style="display: inline">
+              <button class="quiet tiny" name="direction" value="up" type="submit"
+                      {{ 'disabled' if loop.first }} aria-label="Move up">▲</button>
+              <button class="quiet tiny" name="direction" value="down" type="submit"
+                      {{ 'disabled' if loop.last }} aria-label="Move down">▼</button>
+            </form>
+          </td>
+          {% endif %}
           <td class="num faint">{{ loop.index }}</td>
           <td>
             {% if hidden %}
@@ -100,6 +120,13 @@
           <td class="muted">{{ w['brought_by'] or '—' }}</td>
           <td class="num muted">{{ w['price_nok'] or '—' }}</td>
           <td class="nowrap">
+            {#- No editing on a blind evening until it is closed: a form
+                prefilled with the name would undo the one rule that makes it
+                blind. Remove still works, so a wrong bottle can be taken off
+                and put back. -#}
+            {% if not hidden %}
+            <button class="quiet" type="button" data-edits="edit-{{ w['id'] }}">Edit</button>
+            {% endif %}
             <form method="post" action="/events/{{ event['id'] }}/wines/{{ w['id'] }}/delete"
                   style="display: inline">
               <button class="quiet" type="submit"
@@ -107,13 +134,40 @@
             </form>
           </td>
         </tr>
+        {#- Its own row, because the form wants the full width. The drag moves
+            it with its bottle — `data-follows` is how it knows which. -#}
+        {% if not hidden %}
+        <tr id="edit-{{ w['id'] }}" data-follows="{{ w['id'] }}" hidden>
+          <td colspan="{{ 7 if not settled else 6 }}">
+            <form method="post" action="/events/{{ event['id'] }}/wines/{{ w['id'] }}">
+              <div class="grid">
+                <label>Wine <input name="name" value="{{ w['name'] }}" required></label>
+                <label>Producer <input name="producer" value="{{ w['producer'] or '' }}"></label>
+                <label>Vintage <input name="vintage" inputmode="numeric" value="{{ w['vintage'] or '' }}"></label>
+                <label>Country <input name="country" value="{{ w['country'] or '' }}"></label>
+                <label>Region <input name="region" value="{{ w['region'] or '' }}"></label>
+                <label>Grape <input name="grape" value="{{ w['grape'] or '' }}"></label>
+                <label>Price (kr) <input name="price_nok" inputmode="numeric" value="{{ w['price_nok'] or '' }}"></label>
+                <label>Brought by
+                  <select name="brought_by">
+                    <option value="">— nobody yet —</option>
+                    {% for m in members or [] %}
+                      <option value="{{ m['name'] }}" {{ 'selected' if m['name'] == w['brought_by'] }}>{{ m['name'] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Save this bottle</button>
+            </form>
+          </td>
+        </tr>
+        {% endif %}
         {% else %}
-        <tr><td colspan="6" class="muted">No bottles lined up yet.</td></tr>
+        <tr><td colspan="7" class="muted">No bottles lined up yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-
   {#- The cellar's own fields, so a bottle needs describing once and not twice
       when the evening moves into the archive. Only the name is required. -#}
   <details class="filters" {{ 'open' if error or prefill }}>
@@ -128,7 +182,17 @@
       <label>Photograph the label
         <input type="file" name="photo" accept="image/*" capture="environment" required>
       </label>
+      {#- The file input opens the camera app on a phone and a file browser on a
+          laptop, which is no use when the bottle is in your hand. This takes
+          the picture here — and then hands the result to that same input, so
+          the reading goes through exactly one path. -#}
+      <button type="button" class="quiet" id="open-camera" hidden>Use the camera</button>
       <button type="submit">Read the label</button>
+      <div id="viewfinder" hidden>
+        <video id="preview" playsinline muted></video>
+        <button type="button" id="snap">Capture</button>
+        <button type="button" class="quiet" id="close-camera">Cancel</button>
+      </div>
       <p class="muted small">
         The photo is sent to be read and then dropped — check what comes back
         before you add it.
@@ -245,6 +309,190 @@
   {% endif %}
 </section>
 {% endif %}
+
+{#- The camera. It needs a secure context — https, or localhost — so over the
+    tunnel and on this machine it runs, and on a phone pointed straight at a
+    laptop's IP over plain http it does not. That is why the file input stays:
+    on a phone it opens the camera app anyway. The button only appears once we
+    know the browser can do it, so there is never a dead control.
+
+    What it captures goes into that same file input through a DataTransfer, and
+    the ordinary form does the rest — no fetch, no second endpoint, no second
+    way for the reading to fail. The frame is scaled to 1600px and encoded as
+    JPEG on the way, which keeps both the upload and the reading cheap. -#}
+<script>
+  (function () {
+    var open = document.getElementById('open-camera');
+    if (!open || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
+    var box = document.getElementById('viewfinder');
+    var video = document.getElementById('preview');
+    var file = document.querySelector('.shot input[type=file]');
+    var stream = null;
+    open.hidden = false;
+
+    function stop() {
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+      box.hidden = true;
+      open.hidden = false;
+    }
+
+    open.addEventListener('click', function () {
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }
+      }).then(function (got) {
+        stream = got;
+        video.srcObject = got;
+        video.play();
+        box.hidden = false;
+        open.hidden = true;
+      }).catch(function () {
+        // Declined, or no camera. Say so once and get out of the way rather
+        // than leaving a button that does nothing.
+        open.disabled = true;
+        open.textContent = 'No camera available — pick a photo instead';
+      });
+    });
+
+    document.getElementById('close-camera').addEventListener('click', stop);
+
+    document.getElementById('snap').addEventListener('click', function () {
+      var scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function (blob) {
+        var carrier = new DataTransfer();
+        carrier.items.add(new File([blob], 'label.jpg', { type: 'image/jpeg' }));
+        file.files = carrier.files;
+        stop();
+        file.form.requestSubmit();
+      }, 'image/jpeg', 0.85);
+    });
+  })();
+</script>
+
+{#- Opening and closing the panels on this page. Escape closes whatever is
+    open, which is what a keyboard expects of a thing that covers the page —
+    and it stops the camera too, so the light goes out rather than staying on
+    behind a panel nobody can see. -#}
+<script>
+  (function () {
+    function shut() {
+      document.querySelectorAll('tr[data-follows]').forEach(function (row) {
+        row.hidden = true;
+      });
+      document.querySelectorAll('details.filters[open]').forEach(function (panel) {
+        panel.open = false;
+      });
+      var camera = document.getElementById('close-camera');
+      if (camera && !document.getElementById('viewfinder').hidden) camera.click();
+    }
+
+    document.querySelectorAll('[data-edits]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var panel = document.getElementById(button.dataset.edits);
+        var opening = panel.hidden;
+        shut();
+        panel.hidden = !opening;
+      });
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      shut();
+      // So the next Escape is not swallowed by a field that still has focus.
+      if (document.activeElement) document.activeElement.blur();
+    });
+  })();
+</script>
+
+{#- Dragging is an enhancement: the ▲▼ buttons above do the same job with no
+    JavaScript, and this only ever posts the same order to the same route.
+
+    Pointer Events, because HTML5 drag-and-drop does not fire on touch at all —
+    one set of handlers for mouse, finger and pen. The move and up handlers go
+    on the *document* rather than relying on setPointerCapture: capture is
+    released the moment its element is taken out of the DOM, and this drag does
+    exactly that to the row it is holding, on every frame.
+
+    The Edit form for a bottle is the row straight after it, marked
+    data-follows, and travels with it. -#}
+<script>
+  (function () {
+    var list = document.getElementById('lineup');
+    if (!list || !window.PointerEvent) return;
+    var dragging = null;
+
+    function rows() {
+      return [].slice.call(list.querySelectorAll('tr[data-wine]'));
+    }
+
+    function follower(row) {
+      var next = row.nextElementSibling;
+      return next && next.dataset.follows === row.dataset.wine ? next : null;
+    }
+
+    function moveTo(target) {
+      var tail = follower(dragging);
+      list.insertBefore(dragging, target);
+      if (tail) list.insertBefore(tail, dragging.nextSibling);
+    }
+
+    function onMove(event) {
+      if (!dragging) return;
+      event.preventDefault();
+      var over = null;
+      rows().forEach(function (row) {
+        if (row === dragging) return;
+        var box = row.getBoundingClientRect();
+        if (event.clientY >= box.top && event.clientY <= box.bottom) over = row;
+      });
+      if (!over) return;
+      var box = over.getBoundingClientRect();
+      var below = event.clientY > box.top + (box.bottom - box.top) / 2;
+      // Past `over` means after it *and* after whatever follows it, or the row
+      // would land between a bottle and its own form.
+      var after = below ? (follower(over) || over).nextElementSibling : over;
+      moveTo(after);
+    }
+
+    function onUp() {
+      if (!dragging) return;
+      dragging.classList.remove('lifting');
+      dragging = null;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/events/' + list.dataset.event + '/wines/order';
+      var field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = 'order';
+      field.value = rows().map(function (row) { return row.dataset.wine; }).join(',');
+      form.appendChild(field);
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    list.addEventListener('pointerdown', function (event) {
+      // The whole grip cell, not the glyph alone: a braille dot is a small
+      // thing to ask anyone to hit, let alone with a thumb.
+      var grip = event.target.closest('.grip');
+      if (!grip || event.target.closest('button')) return;
+      dragging = grip.closest('tr');
+      dragging.classList.add('lifting');
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+      event.preventDefault();
+    });
+  })();
+</script>
 
 {% include "events/_kinds.html" %}
 
