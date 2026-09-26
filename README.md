@@ -57,6 +57,14 @@ and dropped; it is never saved or logged, and it costs roughly a tenth of a
 krone a bottle. Without the key the control isn't shown and bottles are typed
 in, which is the path that cannot fail.
 
+**To try any of that out** without it landing in the cellar, run
+`python scripts/sandbox.py`. It copies the database to `data/sandbox.sqlite3`
+and serves the app from the copy on port 8001, so you can register an evening,
+score it and press Close with the real database untouched — which matters,
+because Close is the one button in the app that does not come back. Each run
+starts from a fresh copy; `--keep` carries on with the last one. When you are
+done, delete the file.
+
 **Signing in** is one club password, then you pick your name. That is honestly
 all it is: anyone with the password can pick any name, which is fine for nine
 friends on one laptop and not fine the day this gets a public address. When it
