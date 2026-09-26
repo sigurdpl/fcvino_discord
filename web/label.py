@@ -65,7 +65,18 @@ class LabelUnreadable(Exception):
 
 def read_label(image: bytes, media_type: str, api_key: str) -> Label:
     """Ask the model what bottle this is. Raises LabelUnreadable on any failure."""
-    import anthropic
+    try:
+        # Imported here rather than at the top so the app starts without the
+        # SDK — which is the normal state wherever no key is configured. With a
+        # key set and the package missing it would otherwise be an ImportError
+        # mid-request, and a 500 is not an answer: the bottle is still addable
+        # by hand, and the page should say so.
+        import anthropic
+    except ImportError as exc:
+        raise LabelUnreadable(
+            "The label reader isn't installed here (pip install anthropic). "
+            "Type it in?"
+        ) from exc
 
     if len(image) > MAX_BYTES:
         raise LabelUnreadable("That photo is too big — try again, or type it in.")

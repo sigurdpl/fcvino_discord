@@ -1775,3 +1775,301 @@ def test_the_search_form_has_the_controls_those_triggers_cover(signed_in):
     for name in ("q", "country", "region", "grape", "brought_by", "rated_by",
                  "year_from", "year_to", "vintage_from", "vintage_to", "min_score"):
         assert f'name="{name}"' in form, f"{name} is outside the form that listens"
+
+
+def test_a_missing_sdk_reads_as_a_sentence(monkeypatch):
+    """A key set and `anthropic` not installed is a real state — it is the
+    machine the club runs the app on today. `sys.modules[name] = None` is what
+    makes `import anthropic` fail the way it would there."""
+    import sys
+
+    from web.label import LabelUnreadable, read_label
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    with pytest.raises(LabelUnreadable, match="isn't installed"):
+        read_label(b"a photo", "image/jpeg", "a-key")
+
+
+def test_a_missing_sdk_leaves_the_bottle_addable_by_hand(with_camera, evening, monkeypatch):
+    """The promise the whole feature rests on: it comes back as a page."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    response = shoot(with_camera, evening)
+    assert response.status_code == 400, "a sentence, not a stack trace"
+    assert "isn&#39;t installed" in response.text
+    assert 'name="name"' in response.text, "and the form is still there"
+
+
+# -- correcting a bottle, and changing the running order --------------------
+
+
+def lineup(db, event_id):
+    return [r["name"] for r in db.query(
+        "SELECT name FROM event_wines WHERE event_id=? ORDER BY position, id", (event_id,))]
+
+
+def three_bottles(client, db, kind="tasting"):
+    kinded(client, kind, theme=f"Lineup {kind}", starts_at=tonight())
+    event_id = latest(db)["id"]
+    for name in ("Alfa", "Beta", "Gamma"):
+        client.post(f"/events/{event_id}/wines", data={"name": name})
+    return event_id
+
+
+def test_a_bottle_can_be_corrected_after_it_is_added(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    wine_id = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                           (event_id,))[0]["id"]
+    signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                   data={"name": "Alfa Romeo", "vintage": "2019", "country": "Italy"})
+    row = cellar.query_one("SELECT * FROM event_wines WHERE id=?", (wine_id,))
+    assert (row["name"], row["vintage"], row["country"]) == ("Alfa Romeo", 2019, "Italy")
+    assert lineup(cellar, event_id) == ["Alfa Romeo", "Beta", "Gamma"], "and it stays put"
+
+
+def test_a_correction_needs_a_name(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    wine_id = cellar.query_one("SELECT id FROM event_wines WHERE event_id=?", (event_id,))["id"]
+    response = signed_in.post(f"/events/{event_id}/wines/{wine_id}", data={"name": " "})
+    assert response.status_code == 400
+    assert cellar.query_one("SELECT name FROM event_wines WHERE id=?", (wine_id,))["name"] == "Alfa"
+
+
+def test_a_blind_evening_is_not_editable_until_it_closes(signed_in, cellar):
+    """A form prefilled with the name would undo the one rule that makes it
+    blind, so neither the page nor the route offers it."""
+    event_id = three_bottles(signed_in, cellar, kind="blind")
+    wine_id = cellar.query_one("SELECT id FROM event_wines WHERE event_id=?", (event_id,))["id"]
+    page = signed_in.get(f"/events/{event_id}").text
+    assert ">Edit<" not in page.split("The wines")[1].split("Add a bottle")[0]
+
+    response = signed_in.post(f"/events/{event_id}/wines/{wine_id}", data={"name": "Revealed"})
+    assert response.status_code == 400
+    assert "named when it closes" in response.text
+    assert cellar.query_one("SELECT name FROM event_wines WHERE id=?", (wine_id,))["name"] == "Alfa"
+
+
+# -- the running order ------------------------------------------------------
+
+
+def test_the_bottles_can_be_put_in_another_order(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+    signed_in.post(f"/events/{event_id}/wines/order",
+                   data={"order": f"{ids[2]},{ids[0]},{ids[1]}"})
+    assert lineup(cellar, event_id) == ["Gamma", "Alfa", "Beta"]
+
+
+def test_one_step_at_a_time_without_any_javascript(signed_in, cellar):
+    """The ▲▼ buttons are the mechanism; the drag only posts the same order."""
+    event_id = three_bottles(signed_in, cellar)
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+    signed_in.post(f"/events/{event_id}/wines/{ids[2]}/move", data={"direction": "up"})
+    assert lineup(cellar, event_id) == ["Alfa", "Gamma", "Beta"]
+    signed_in.post(f"/events/{event_id}/wines/{ids[0]}/move", data={"direction": "down"})
+    assert lineup(cellar, event_id) == ["Gamma", "Alfa", "Beta"]
+
+
+def test_moving_past_the_end_does_nothing(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    first = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                         (event_id,))[0]["id"]
+    signed_in.post(f"/events/{event_id}/wines/{first}/move", data={"direction": "up"})
+    assert lineup(cellar, event_id) == ["Alfa", "Beta", "Gamma"]
+
+
+def test_a_stray_id_in_a_posted_order_is_ignored(signed_in, cellar):
+    """Not trusted, and not a crash: the evening keeps all three bottles."""
+    event_id = three_bottles(signed_in, cellar)
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+    signed_in.post(f"/events/{event_id}/wines/order", data={"order": f"9999,{ids[1]},abc"})
+    assert sorted(lineup(cellar, event_id)) == ["Alfa", "Beta", "Gamma"]
+    assert lineup(cellar, event_id)[0] == "Beta", "the one real id led"
+
+
+def test_the_order_is_fixed_once_anybody_is_scoring(signed_in, cellar):
+    """Renumbering Wine 1…N mid-card would move the bottles under people. The
+    votes would stay right, which is what makes it silent and worth refusing."""
+    event_id = three_bottles(signed_in, cellar, kind="blind")
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+    signed_in.post(f"/events/{event_id}/start")
+
+    assert ">⠿<" not in signed_in.get(f"/events/{event_id}").text, "no handle either"
+    shuffled = {"order": f"{ids[2]},{ids[0]},{ids[1]}"}
+    for path, data in ((f"/events/{event_id}/wines/order", shuffled),
+                       (f"/events/{event_id}/wines/{ids[0]}/move", {"direction": "down"})):
+        response = signed_in.post(path, data=data)
+        assert response.status_code == 409
+        assert "running order is fixed" in response.text
+    assert lineup(cellar, event_id) == ["Alfa", "Beta", "Gamma"]
+
+
+def test_the_cellar_keeps_the_order_you_left_it_in(signed_in, cellar):
+    """What reordering is for: it is the order the archive ends up holding."""
+    event_id = three_bottles(signed_in, cellar)
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+    signed_in.post(f"/events/{event_id}/wines/order",
+                   data={"order": f"{ids[2]},{ids[1]},{ids[0]}"})
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    assert [r["name"] for r in cellar.query(
+        "SELECT name FROM wines WHERE tasting_id=? ORDER BY id", (tasting_id,))] == [
+        "Gamma", "Beta", "Alfa"]
+
+
+def test_the_camera_button_appears_only_with_a_key(with_camera, evening, signed_in, cellar):
+    """The script behind it cannot be tested here — there is no browser on this
+    machine — but whether the control is rendered at all can be."""
+    assert "Use the camera" in with_camera.get(f"/events/{evening}").text
+
+    make_event(signed_in, theme="No camera")
+    page = signed_in.get(f"/events/{latest(cellar)['id']}").text
+    assert "Use the camera" not in page
+    assert "Photograph the label" not in page
+
+
+def test_the_camera_hands_its_picture_to_the_upload_that_already_works(with_camera, evening):
+    """One path to the reader, not two: the capture fills the file input and
+    the ordinary form posts it, so there is no second way for a read to fail."""
+    page = with_camera.get(f"/events/{evening}").text
+    assert "getUserMedia" in page
+    assert "new DataTransfer()" in page
+    assert "requestSubmit" in page
+    assert page.count(f'action="/events/{evening}/wines/label"') == 1
+
+
+def test_each_bottle_is_one_row_with_its_form_marked_as_following(signed_in, cellar):
+    """The drag moves a bottle and its Edit form together, and finds the form
+    by `data-follows`. If that marker or the row order ever drifts, a drag
+    leaves a form stranded behind somebody else's bottle."""
+    event_id = three_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    lineup = page.split('id="lineup"')[1].split("</tbody>")[0]
+    ids = [r["id"] for r in cellar.query(
+        "SELECT id FROM event_wines WHERE event_id=? ORDER BY position", (event_id,))]
+
+    assert lineup.count("data-wine=") == 3
+    assert lineup.count("data-follows=") == 3
+    for wine_id in ids:
+        bottle = lineup.index(f'data-wine="{wine_id}"')
+        form = lineup.index(f'data-follows="{wine_id}"')
+        assert form > bottle, "a form comes after its own bottle"
+        # And nothing else between them: the next data-wine is further on.
+        following = lineup.find("data-wine=", bottle + 1)
+        assert following == -1 or form < following
+
+
+def test_escape_and_the_edit_toggle_are_wired_to_the_panels(signed_in, cellar):
+    """The behaviour is the browser's; what can be held here is that the page
+    carries the hooks the script binds to."""
+    event_id = three_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "data-edits=" in page, "the Edit buttons are bound by the script, not inline"
+    assert "'Escape'" in page
+    assert "onclick=\"document.getElementById" not in page, "no inline handler left behind"
+
+
+# -- reopening an evening closed by mistake ---------------------------------
+
+
+def test_reopening_takes_the_evening_back_out_of_the_cellar(signed_in, cellar):
+    """Closing copies; reopening removes the copy. The staged bottles and every
+    card never left, so the evening comes back whole."""
+    event_id = three_bottles(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 93}))
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    assert cellar.query("SELECT * FROM wines WHERE tasting_id=?", (tasting_id,))
+
+    signed_in.post(f"/events/{event_id}/reopen")
+
+    assert cellar.query("SELECT * FROM tastings WHERE id=?", (tasting_id,)) == []
+    assert cellar.query("SELECT * FROM wines WHERE tasting_id=?", (tasting_id,)) == []
+    row = cellar.query_one("SELECT started_at, tasting_id FROM events WHERE id=?", (event_id,))
+    assert (row["started_at"], row["tasting_id"]) == (None, None), "upcoming again"
+    assert lineup(cellar, event_id) == ["Alfa", "Beta", "Gamma"], "bottles still staged"
+    assert votes_of(cellar, event_id) != {}, "and the card is still there"
+
+
+def test_the_handles_come_back_when_it_is_reopened(signed_in, cellar):
+    """The reported fault: a settled evening has no handles, and said nothing."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    assert "⠿" not in signed_in.get(f"/events/{event_id}").text
+
+    signed_in.post(f"/events/{event_id}/reopen")
+    assert "⠿" in signed_in.get(f"/events/{event_id}").text
+
+
+def test_closing_after_reopening_lands_in_the_same_place(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    first = cellar.query_one("SELECT key FROM tastings ORDER BY id DESC")["key"]
+    signed_in.post(f"/events/{event_id}/reopen")
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    assert cellar.query_one("SELECT key FROM tastings ORDER BY id DESC")["key"] == first
+    assert cellar.query_one("SELECT COUNT(*) n FROM tastings WHERE key=?", (first,))["n"] == 1
+
+
+def test_reopening_refuses_to_eat_a_bottle_it_did_not_put_there(signed_in, cellar):
+    """`promote_event` merges into a tasting that already holds the key, so one
+    can contain bottles this evening never put there — and those belong to
+    somebody else's evening."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    cellar.execute(
+        """INSERT INTO wines (name, tasting_id, added_by, added_at)
+           VALUES ('Somebody else''s bottle', ?, 0, ?)""",
+        (tasting_id, utcnow_iso()),
+    )
+
+    response = signed_in.post(f"/events/{event_id}/reopen")
+    assert response.status_code == 409
+    assert "did not put there" in response.text
+    assert cellar.query("SELECT * FROM tastings WHERE id=?", (tasting_id,)), "untouched"
+    assert cellar.query_one(
+        "SELECT COUNT(*) n FROM wines WHERE tasting_id=?", (tasting_id,))["n"] == 4
+
+
+def test_an_evening_that_was_never_closed_cannot_be_reopened(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    response = signed_in.post(f"/events/{event_id}/reopen")
+    assert response.status_code == 409
+    assert "not in the archive" in response.text
+
+
+# -- and the silence that started all this ----------------------------------
+
+
+@pytest.mark.parametrize("close_it, says", [
+    (False, "Voting has started"),
+    (True, "Closed. The bottles are in the cellar"),
+])
+def test_a_settled_evening_says_why_the_order_is_fixed(signed_in, cellar, close_it, says):
+    """It used to drop the controls in silence, which reads exactly like a
+    broken drag — and did."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    if close_it:
+        signed_in.post(f"/events/{event_id}/close")
+    assert says in signed_in.get(f"/events/{event_id}").text
+
+
+def test_an_untouched_evening_says_nothing_and_shows_handles(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "⠿" in page
+    assert "running order is fixed" not in page

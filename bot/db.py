@@ -814,6 +814,63 @@ class Database:
             (event_id, name, *values, seat["next"], utcnow_iso()),
         )
 
+    def update_event_wine(self, event_id: int, wine_id: int, **fields: Any) -> None:
+        """Correct a bottle already on the list. Only the columns passed move.
+
+        The same reading `update_event` gives it: `None` means leave it alone,
+        an empty string clears it. The event id is in the WHERE as it is for
+        deleting, so a stray id cannot reach another evening's bottle.
+        """
+        allowed = ("name", "producer", "vintage", "country", "region", "grape",
+                   "price_nok", "brought_by")
+        changes = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if not changes:
+            return
+        assignments = ", ".join(f"{column}=?" for column in changes)
+        self.execute(
+            f"UPDATE event_wines SET {assignments} WHERE id=? AND event_id=?",
+            (*(v if v != "" else None for v in changes.values()), wine_id, event_id),
+        )
+
+    def reorder_event_wines(self, event_id: int, order: Sequence[int]) -> None:
+        """Put the bottles in the order given, 1…N.
+
+        Ids that belong to another evening — or to none — are ignored rather
+        than trusted, and anything this evening has that the list leaves out
+        keeps its place at the end, so a partial list cannot lose a bottle.
+        """
+        theirs = [
+            row["id"]
+            for row in self.query(
+                "SELECT id FROM event_wines WHERE event_id=? ORDER BY position, id",
+                (event_id,),
+            )
+        ]
+        wanted = [wine_id for wine_id in order if wine_id in theirs]
+        seated = wanted + [wine_id for wine_id in theirs if wine_id not in wanted]
+        self.executemany(
+            "UPDATE event_wines SET position=? WHERE id=? AND event_id=?",
+            [(seat, wine_id, event_id) for seat, wine_id in enumerate(seated, start=1)],
+        )
+
+    def move_event_wine(self, event_id: int, wine_id: int, *, up: bool) -> None:
+        """One step up or down the list, which is the no-JavaScript way to do it."""
+        order = [
+            row["id"]
+            for row in self.query(
+                "SELECT id FROM event_wines WHERE event_id=? ORDER BY position, id",
+                (event_id,),
+            )
+        ]
+        if wine_id not in order:
+            return
+        here = order.index(wine_id)
+        there = here - 1 if up else here + 1
+        if not 0 <= there < len(order):
+            return                      # already at the end it is trying to reach
+        order[here], order[there] = order[there], order[here]
+        self.reorder_event_wines(event_id, order)
+
     def delete_event_wine(self, event_id: int, wine_id: int) -> None:
         """The event id is in the WHERE too, so a stray id cannot reach another
         evening's list."""
@@ -934,6 +991,56 @@ class Database:
             )
         self.execute("UPDATE events SET tasting_id=? WHERE id=?", (tasting_id, event_id))
         return tasting_id
+
+    def reopen_event(self, event_id: int) -> str | None:
+        """Undo a close. Returns None on success, or why it refused.
+
+        The bottles and the cards never left `event_wines` and `event_votes` —
+        closing *copies* into the cellar — so this only has to take the copy
+        back out: the wines the close made (their ratings go too, by
+        ON DELETE CASCADE), then the tasting, then the event's own marks.
+
+        `started_at` is cleared along with `tasting_id`, because "it is an
+        upcoming evening again" is what reopening means. Leaving it half-open
+        would hand back an evening whose running order is still frozen, which
+        is the state somebody reopening it is usually trying to escape.
+
+        It refuses rather than guesses. `promote_event` merges into a tasting
+        that already has the key, so one can hold bottles this event never put
+        there — and deleting those would be deleting somebody else's evening.
+        """
+        event = self.query_one("SELECT * FROM events WHERE id=?", (event_id,))
+        if event is None or event["tasting_id"] is None:
+            return "That evening is not in the archive."
+
+        staged = {
+            (row["name"].lower(), row["brought_by"] or "")
+            for row in self.query(
+                "SELECT name, brought_by FROM event_wines WHERE event_id=?", (event_id,)
+            )
+        }
+        archived = self.query(
+            "SELECT id, name, brought_by FROM wines WHERE tasting_id=?",
+            (event["tasting_id"],),
+        )
+        strangers = [
+            row["name"] for row in archived
+            if (row["name"].lower(), row["brought_by"] or "") not in staged
+        ]
+        if strangers:
+            return (
+                f"{event['theme']} shares its place in the archive with "
+                f"{len(strangers)} bottle(s) this evening did not put there "
+                f"({strangers[0]!r}…). Reopening would take those too."
+            )
+
+        for row in archived:
+            self.execute("DELETE FROM wines WHERE id=?", (row["id"],))
+        self.execute("DELETE FROM tastings WHERE id=?", (event["tasting_id"],))
+        self.execute(
+            "UPDATE events SET tasting_id=NULL, started_at=NULL WHERE id=?", (event_id,)
+        )
+        return None
 
     def _promote_trip(self, event: sqlite3.Row) -> int | None:
         """File a finished trip in the archive of one-a-year away trips.
