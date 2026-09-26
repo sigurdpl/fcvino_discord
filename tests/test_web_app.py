@@ -1973,3 +1973,103 @@ def test_escape_and_the_edit_toggle_are_wired_to_the_panels(signed_in, cellar):
     assert "data-edits=" in page, "the Edit buttons are bound by the script, not inline"
     assert "'Escape'" in page
     assert "onclick=\"document.getElementById" not in page, "no inline handler left behind"
+
+
+# -- reopening an evening closed by mistake ---------------------------------
+
+
+def test_reopening_takes_the_evening_back_out_of_the_cellar(signed_in, cellar):
+    """Closing copies; reopening removes the copy. The staged bottles and every
+    card never left, so the evening comes back whole."""
+    event_id = three_bottles(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/vote", data=card(cellar, event_id, {0: 93}))
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    assert cellar.query("SELECT * FROM wines WHERE tasting_id=?", (tasting_id,))
+
+    signed_in.post(f"/events/{event_id}/reopen")
+
+    assert cellar.query("SELECT * FROM tastings WHERE id=?", (tasting_id,)) == []
+    assert cellar.query("SELECT * FROM wines WHERE tasting_id=?", (tasting_id,)) == []
+    row = cellar.query_one("SELECT started_at, tasting_id FROM events WHERE id=?", (event_id,))
+    assert (row["started_at"], row["tasting_id"]) == (None, None), "upcoming again"
+    assert lineup(cellar, event_id) == ["Alfa", "Beta", "Gamma"], "bottles still staged"
+    assert votes_of(cellar, event_id) != {}, "and the card is still there"
+
+
+def test_the_handles_come_back_when_it_is_reopened(signed_in, cellar):
+    """The reported fault: a settled evening has no handles, and said nothing."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    assert "⠿" not in signed_in.get(f"/events/{event_id}").text
+
+    signed_in.post(f"/events/{event_id}/reopen")
+    assert "⠿" in signed_in.get(f"/events/{event_id}").text
+
+
+def test_closing_after_reopening_lands_in_the_same_place(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    first = cellar.query_one("SELECT key FROM tastings ORDER BY id DESC")["key"]
+    signed_in.post(f"/events/{event_id}/reopen")
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    assert cellar.query_one("SELECT key FROM tastings ORDER BY id DESC")["key"] == first
+    assert cellar.query_one("SELECT COUNT(*) n FROM tastings WHERE key=?", (first,))["n"] == 1
+
+
+def test_reopening_refuses_to_eat_a_bottle_it_did_not_put_there(signed_in, cellar):
+    """`promote_event` merges into a tasting that already holds the key, so one
+    can contain bottles this evening never put there — and those belong to
+    somebody else's evening."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    signed_in.post(f"/events/{event_id}/close")
+    tasting_id = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    cellar.execute(
+        """INSERT INTO wines (name, tasting_id, added_by, added_at)
+           VALUES ('Somebody else''s bottle', ?, 0, ?)""",
+        (tasting_id, utcnow_iso()),
+    )
+
+    response = signed_in.post(f"/events/{event_id}/reopen")
+    assert response.status_code == 409
+    assert "did not put there" in response.text
+    assert cellar.query("SELECT * FROM tastings WHERE id=?", (tasting_id,)), "untouched"
+    assert cellar.query_one(
+        "SELECT COUNT(*) n FROM wines WHERE tasting_id=?", (tasting_id,))["n"] == 4
+
+
+def test_an_evening_that_was_never_closed_cannot_be_reopened(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    response = signed_in.post(f"/events/{event_id}/reopen")
+    assert response.status_code == 409
+    assert "not in the archive" in response.text
+
+
+# -- and the silence that started all this ----------------------------------
+
+
+@pytest.mark.parametrize("close_it, says", [
+    (False, "Voting has started"),
+    (True, "Closed. The bottles are in the cellar"),
+])
+def test_a_settled_evening_says_why_the_order_is_fixed(signed_in, cellar, close_it, says):
+    """It used to drop the controls in silence, which reads exactly like a
+    broken drag — and did."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/start")
+    if close_it:
+        signed_in.post(f"/events/{event_id}/close")
+    assert says in signed_in.get(f"/events/{event_id}").text
+
+
+def test_an_untouched_evening_says_nothing_and_shows_handles(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "⠿" in page
+    assert "running order is fixed" not in page

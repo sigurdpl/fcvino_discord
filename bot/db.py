@@ -992,6 +992,56 @@ class Database:
         self.execute("UPDATE events SET tasting_id=? WHERE id=?", (tasting_id, event_id))
         return tasting_id
 
+    def reopen_event(self, event_id: int) -> str | None:
+        """Undo a close. Returns None on success, or why it refused.
+
+        The bottles and the cards never left `event_wines` and `event_votes` —
+        closing *copies* into the cellar — so this only has to take the copy
+        back out: the wines the close made (their ratings go too, by
+        ON DELETE CASCADE), then the tasting, then the event's own marks.
+
+        `started_at` is cleared along with `tasting_id`, because "it is an
+        upcoming evening again" is what reopening means. Leaving it half-open
+        would hand back an evening whose running order is still frozen, which
+        is the state somebody reopening it is usually trying to escape.
+
+        It refuses rather than guesses. `promote_event` merges into a tasting
+        that already has the key, so one can hold bottles this event never put
+        there — and deleting those would be deleting somebody else's evening.
+        """
+        event = self.query_one("SELECT * FROM events WHERE id=?", (event_id,))
+        if event is None or event["tasting_id"] is None:
+            return "That evening is not in the archive."
+
+        staged = {
+            (row["name"].lower(), row["brought_by"] or "")
+            for row in self.query(
+                "SELECT name, brought_by FROM event_wines WHERE event_id=?", (event_id,)
+            )
+        }
+        archived = self.query(
+            "SELECT id, name, brought_by FROM wines WHERE tasting_id=?",
+            (event["tasting_id"],),
+        )
+        strangers = [
+            row["name"] for row in archived
+            if (row["name"].lower(), row["brought_by"] or "") not in staged
+        ]
+        if strangers:
+            return (
+                f"{event['theme']} shares its place in the archive with "
+                f"{len(strangers)} bottle(s) this evening did not put there "
+                f"({strangers[0]!r}…). Reopening would take those too."
+            )
+
+        for row in archived:
+            self.execute("DELETE FROM wines WHERE id=?", (row["id"],))
+        self.execute("DELETE FROM tastings WHERE id=?", (event["tasting_id"],))
+        self.execute(
+            "UPDATE events SET tasting_id=NULL, started_at=NULL WHERE id=?", (event_id,)
+        )
+        return None
+
     def _promote_trip(self, event: sqlite3.Row) -> int | None:
         """File a finished trip in the archive of one-a-year away trips.
 

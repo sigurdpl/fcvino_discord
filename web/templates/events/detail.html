@@ -168,6 +168,21 @@
       </tbody>
     </table>
   </div>
+  {#- The controls above disappear once an evening is settled. Saying which of
+      the two reasons applies, in the same words the routes answer with, so an
+      absence is never left to be interpreted. -#}
+  {% if settled and wines %}
+    <p class="muted small">
+      {% if event['tasting_id'] %}
+        Closed. The bottles are in the cellar now, so the running order here is
+        history — reopen the evening below if it was closed by mistake.
+      {% else %}
+        Voting has started, so the running order is fixed: renumbering the
+        bottles now would move them under anyone halfway through a card.
+      {% endif %}
+    </p>
+  {% endif %}
+
   {#- The cellar's own fields, so a bottle needs describing once and not twice
       when the evening moves into the archive. Only the name is required. -#}
   <details class="filters" {{ 'open' if error or prefill }}>
@@ -283,6 +298,12 @@
       <a href="/wine/tastings/{{ event['tasting_id'] }}">see the evening</a>.
       {% if event['kind'] == 'blind' %}The bottles are named above now.{% endif %}
     </p>
+    {#- For an evening closed by mistake. It only removes what closing copied
+        into the cellar; the bottles and every card are still staged here. -#}
+    <form method="post" action="/events/{{ event['id'] }}/reopen">
+      <button class="quiet" type="submit"
+              onclick="return confirm('Reopen {{ event['theme'] }}? Its {{ wines | length }} bottle(s) and their scores come out of the cellar again. Nothing staged here is lost.')">Reopen it</button>
+    </form>
   {% elif event['trip_id'] %}
     <p class="muted">
       In the archive —

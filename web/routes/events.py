@@ -437,6 +437,23 @@ async def remove_wine(request: Request, db: Db, _: LoggedIn, event_id: int, wine
     return RedirectResponse(f"/events/{event_id}", status_code=303)
 
 
+@router.post("/{event_id}/reopen")
+async def reopen(request: Request, db: Db, cfg: Cfg, _: LoggedIn, event_id: int):
+    """Take a closed evening back out of the archive.
+
+    Destructive in one direction only: it removes what closing *copied* into
+    the cellar. The bottles and the cards never left the staging tables, so the
+    evening comes back whole.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    refused = db.reopen_event(event_id)
+    if refused:
+        return _detail(request, db, cfg, row, error=refused, status=409)
+    return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
 @router.post("/{event_id}/close")
 async def close(request: Request, db: Db, _: LoggedIn, event_id: int):
     """The end of an evening: its bottles and its scores join the archive.
