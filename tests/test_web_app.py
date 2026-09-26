@@ -1310,3 +1310,28 @@ def test_the_camera_needs_a_login(cellar, tmp_path, monkeypatch):
                           follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
+
+
+# -- an evening nobody scored ----------------------------------------------
+
+
+def test_an_unscored_evening_keeps_its_pouring_order(signed_in, cellar):
+    """The debut of July 2012 has no scores at all, so every average is null and
+    the tie-break is all there is. Alphabetical would throw away the one thing
+    the rows do record — the order the bottles were opened in."""
+    now = utcnow_iso()
+    cellar.execute(
+        "INSERT INTO tastings (key, year, month, theme, added_at) VALUES (?,?,?,?,?)",
+        ("2012-07|debut", 2012, 7, "Debut", now),
+    )
+    tasting = cellar.query_one("SELECT id FROM tastings WHERE key='2012-07|debut'")["id"]
+    poured = ["Zinfandel first", "Doppio Passo second", "Alain Graillot last"]
+    for name in poured:
+        cellar.execute(
+            """INSERT INTO wines (name, tasting_id, added_by, added_at)
+               VALUES (?,?,0,?)""",
+            (name, tasting, now),
+        )
+    page = signed_in.get(f"/wine/tastings/{tasting}").text
+    assert [n for n in poured if n in page] == poured, "all three are on the page"
+    assert [page.index(n) for n in poured] == sorted(page.index(n) for n in poured)

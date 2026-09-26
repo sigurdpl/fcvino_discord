@@ -152,11 +152,18 @@ def tasting(db: Database, tasting_id: int) -> sqlite3.Row | None:
 
 
 def tasting_wines(db: Database, tasting_id: int) -> list[sqlite3.Row]:
+    """An evening's bottles, best first — and where there is no best, in order.
+
+    The tie-break is the row's own id rather than its name, which is the order
+    the bottles were written down and so the order they were poured. It only
+    shows on a wine nobody scored; the debut of July 2012 is a whole evening of
+    them, and alphabetical would open it on the Crozes-Hermitage.
+    """
     return db.query(
         """SELECT w.*, AVG(r.score) AS average, COUNT(r.score) AS ratings
            FROM wines w LEFT JOIN wine_ratings r ON r.wine_id = w.id
            WHERE w.tasting_id = ?
-           GROUP BY w.id ORDER BY average DESC NULLS LAST, w.name""",
+           GROUP BY w.id ORDER BY average DESC NULLS LAST, w.id""",
         (tasting_id,),
     )
 
