@@ -20,8 +20,9 @@ rather than reinvented — a query folds the same way the index did.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import NamedTuple
 
 from bot.wine_origin import fold
@@ -35,6 +36,10 @@ ORIGIN = 3
 ELSEWHERE = 4
 
 DEFAULT_LIMIT = 50
+
+# A wine nobody has scored. Shared and unwritable, so the default cannot be
+# filled in by accident on one row and turn up on every other.
+NO_SCORES: Mapping[str, int] = MappingProxyType({})
 
 
 class Row(NamedTuple):
@@ -51,6 +56,9 @@ class Row(NamedTuple):
     brought_by: str | None
     average: float | None
     ratings: int
+    # Who gave it what. The average is nine opinions flattened into one number;
+    # this is the nine, which is what "does Tore actually like this" needs.
+    scores: Mapping[str, int] = NO_SCORES
 
 
 class Hit(NamedTuple):
@@ -69,7 +77,10 @@ class Filters:
     country: str | None = None
     region: str | None = None
     grape: str | None = None
-    member: str | None = None
+    # Who carried the bottle in, and — quite separately — whose opinion of it
+    # to look at. Both used to be spelled "member", which is a trap.
+    brought_by: str | None = None
+    rated_by: str | None = None
     year_from: int | None = None
     year_to: int | None = None
     vintage_from: int | None = None
@@ -87,7 +98,9 @@ class Filters:
             return False
         if self.grape and row.grape != self.grape:
             return False
-        if self.member and row.brought_by != self.member:
+        if self.brought_by and row.brought_by != self.brought_by:
+            return False
+        if self.rated_by and self.rated_by not in row.scores:
             return False
         if self.year_from is not None and (row.year is None or row.year < self.year_from):
             return False
@@ -99,9 +112,21 @@ class Filters:
             return False
         if self.vintage_to is not None and (row.vintage is None or row.vintage > self.vintage_to):
             return False
-        if self.min_score is not None and (row.average is None or row.average < self.min_score):
+        if self.min_score is not None and self.yardstick(row) is None:
             return False
         return True
+
+    def yardstick(self, row: Row) -> float | None:
+        """The score `min_score` is measured against, when it is high enough.
+
+        With a member picked it is *their* score — "Tore, at least 90" asks for
+        the wines Tore gave 90, not the ones the room did. With nobody picked
+        it is the average, exactly as it always was.
+        """
+        mark = row.scores.get(self.rated_by) if self.rated_by else row.average
+        if mark is None or (self.min_score is not None and mark < self.min_score):
+            return None
+        return mark
 
 
 QUOTED = re.compile(r'"([^"]*)"')
@@ -206,8 +231,31 @@ class Index:
 
         # Band first, then the wines the club actually has an opinion about:
         # more ratings, then a higher average. Name last so it is deterministic.
-        hits.sort(key=lambda h: (h.band, -h.row.ratings, -(h.row.average or 0), h.row.name))
+        # With a member picked, their own score decides the order within the
+        # band — the whole question being "what does this person like".
+        if filters.rated_by:
+            hits.sort(key=lambda h: (h.band, -h.row.scores.get(filters.rated_by, 0),
+                                     -(h.row.average or 0), h.row.name))
+        else:
+            hits.sort(key=lambda h: (h.band, -h.row.ratings, -(h.row.average or 0), h.row.name))
         return hits[:limit] if limit is not None else hits
+
+    def raters(self) -> list[tuple[str, int]]:
+        """Everyone who has scored something, and how many, busiest first.
+
+        The same job `facets` does for the other dropdowns, but a wine holds
+        several scores rather than one value, so it cannot go through that.
+
+        Guests are here too. Marius has 22 ratings and is deliberately not
+        counted as a member anywhere else, but this dropdown asks whose opinion
+        to look at rather than who is in the club, and hiding 22 real scores
+        would be the stranger answer.
+        """
+        counts: dict[str, int] = {}
+        for row in self.rows:
+            for who in row.scores:
+                counts[who] = counts.get(who, 0) + 1
+        return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
     def facets(self, field: str) -> list[tuple[str, int]]:
         """Distinct values of `field` with counts, commonest first.

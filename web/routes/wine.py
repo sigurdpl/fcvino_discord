@@ -32,7 +32,8 @@ def _filters(
     country: str | None,
     region: str | None,
     grape: str | None,
-    member: str | None,
+    brought_by: str | None,
+    rated_by: str | None,
     year_from: int | None,
     year_to: int | None,
     vintage_from: int | None,
@@ -44,7 +45,8 @@ def _filters(
         country=country or None,
         region=region or None,
         grape=grape or None,
-        member=member or None,
+        brought_by=brought_by or None,
+        rated_by=rated_by or None,
         year_from=year_from,
         year_to=year_to,
         vintage_from=vintage_from,
@@ -63,7 +65,8 @@ async def index(
     country: str = "",
     region: str = "",
     grape: str = "",
-    member: str = "",
+    brought_by: str = "",
+    rated_by: str = "",
     year_from: BlankableInt = None,
     year_to: BlankableInt = None,
     vintage_from: BlankableInt = None,
@@ -71,8 +74,8 @@ async def index(
     min_score: BlankableFloat = None,
     limit: int = Query(60, ge=1, le=500),
 ):
-    filters = _filters(country, region, grape, member, year_from, year_to,
-                       vintage_from, vintage_to, min_score)
+    filters = _filters(country, region, grape, brought_by, rated_by,
+                       year_from, year_to, vintage_from, vintage_to, min_score)
     hits = wines.search(q, filters, limit=None)
     return page(
         request,
@@ -87,6 +90,7 @@ async def index(
         regions=wines.facets("region"),
         grapes=wines.facets("grape"),
         brought=wines.facets("brought_by"),
+        raters=wines.raters(),
     )
 
 
@@ -99,7 +103,8 @@ async def results(
     country: str = "",
     region: str = "",
     grape: str = "",
-    member: str = "",
+    brought_by: str = "",
+    rated_by: str = "",
     year_from: BlankableInt = None,
     year_to: BlankableInt = None,
     vintage_from: BlankableInt = None,
@@ -108,8 +113,8 @@ async def results(
     limit: int = Query(60, ge=1, le=500),
 ):
     """The results table on its own, for HTMX to swap in as you type."""
-    filters = _filters(country, region, grape, member, year_from, year_to,
-                       vintage_from, vintage_to, min_score)
+    filters = _filters(country, region, grape, brought_by, rated_by,
+                       year_from, year_to, vintage_from, vintage_to, min_score)
     hits = wines.search(q, filters, limit=None)
     return page(
         request,
@@ -118,6 +123,7 @@ async def results(
         total_hits=len(hits),
         limit=limit,
         q=q,
+        filters=filters,
     )
 
 

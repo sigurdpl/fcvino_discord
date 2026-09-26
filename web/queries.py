@@ -29,23 +29,40 @@ WINE_ROWS = """
     GROUP BY w.id
 """
 
+# Every score, by name, for the wines they were given to. Nine opinions rather
+# than the one number they average to, which is what the "scored by" filter
+# needs — and 8469 rows, beside the 1172 the index already holds.
+WINE_SCORES = """
+    SELECT r.wine_id, m.name, r.score
+    FROM wine_ratings r JOIN wine_members m ON m.id = r.member_id
+"""
+
 # Cheap enough to run on every search: if neither the number of wines nor the
 # number of ratings has moved, the index cannot be stale. This is what lets the
 # *bot* write to the same database while the web app is running.
+#
+# `MAX(rated_at)` is in here because a *changed* score leaves both counts where
+# they were — and a card resubmitted during an evening does exactly that. The
+# average has always had that hole; a named person's number on the page makes
+# it much easier to notice.
 FINGERPRINT = """
-    SELECT (SELECT COUNT(*) FROM wines)        AS wines,
-           (SELECT COUNT(*) FROM wine_ratings) AS ratings,
-           (SELECT MAX(added_at) FROM wines)   AS latest
+    SELECT (SELECT COUNT(*) FROM wines)            AS wines,
+           (SELECT COUNT(*) FROM wine_ratings)     AS ratings,
+           (SELECT MAX(added_at) FROM wines)       AS latest,
+           (SELECT MAX(rated_at) FROM wine_ratings) AS scored
 """
 
 
 def fingerprint(db: Database) -> tuple:
     row = db.query_one(FINGERPRINT)
     assert row is not None
-    return (row["wines"], row["ratings"], row["latest"])
+    return (row["wines"], row["ratings"], row["latest"], row["scored"])
 
 
 def build_index(db: Database) -> Index:
+    scores: dict[int, dict[str, int]] = {}
+    for rating in db.query(WINE_SCORES):
+        scores.setdefault(rating["wine_id"], {})[rating["name"]] = rating["score"]
     return Index(
         Row(
             id=row["id"],
@@ -59,6 +76,7 @@ def build_index(db: Database) -> Index:
             brought_by=row["brought_by"],
             average=row["average"],
             ratings=row["ratings"],
+            scores=scores.get(row["id"], {}),
         )
         for row in db.query(WINE_ROWS)
     )
