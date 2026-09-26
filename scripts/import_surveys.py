@@ -49,11 +49,19 @@ IMPORT_USER_ID = 0
 METADATA_COLUMNS = 10
 DATE_COLUMN = 4
 
-# Two scores in United Grapes of America were typed with a stuck key, in an
-# evening where every other score is 85–93. Recorded as the 88 they plainly
-# meant rather than dropped, on the club's say-so — and reported when it fires,
-# so the repair is never silent.
-SCORE_REPAIRS = {88787: 88, 8888: 88}
+# Scores typed with a stuck key, all three by the same hand. Recorded as what
+# they plainly meant rather than dropped, on the club's say-so — and reported
+# when it fires, so a repair is never silent. Two are from United Grapes of
+# America, an evening where every other score is 85–93; the third is Priorato's
+# 8187, which its author read back as 87.
+SCORE_REPAIRS = {88787: 88, 8888: 88, 8187: 87}
+
+# `normalise_score` clamps, so a number like 8187 does not fail — it arrives as
+# a perfect 100, which on the evening's least-liked bottle is the highest score
+# in the club's history. Every such typo so far was caught by eye. Above this
+# the number is refused and said out loud instead, leaving the member without a
+# score for that bottle rather than inventing one.
+HIGHEST_SCORE = 100
 
 # An evening whose survey recorded who brought each bottle instead of what it
 # was.
@@ -106,6 +114,14 @@ def theme_from_filename(path: Path) -> str:
     stem = re.sub(r"^Export\s+FC\s+Vino\s+", "", stem, flags=re.I)
     stem = FILENAME_DATE.sub("", stem).strip(" -_")
     return stem
+
+
+def too_high(raw) -> bool:
+    """A number no score can be. Anything else is left to `normalise_score`."""
+    try:
+        return float(raw) > HIGHEST_SCORE
+    except (TypeError, ValueError):
+        return False
 
 
 def is_wine_column(header: str, name_column: str) -> bool:
@@ -209,6 +225,12 @@ def read_export(path: Path, notes: list[str]) -> Evening | None:
                     f"for {member} on {label!r}"
                 )
                 raw = SCORE_REPAIRS[raw]
+            if too_high(raw):
+                notes.append(
+                    f"{path.name}: {raw} is not a score, left out "
+                    f"({member} on {label!r})"
+                )
+                continue
             score = vinotek.normalise_score(raw, scale=1)
             if score is not None:
                 scores[member] = score        # later card wins, rows are in order
