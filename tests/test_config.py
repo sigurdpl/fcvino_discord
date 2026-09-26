@@ -23,6 +23,7 @@ def clean_env(monkeypatch):
         "LOG_LEVEL",
         "FCVINO_ACCESS",
         "FCVINO_ACCESS_MEMBERS",
+        "ANTHROPIC_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 

@@ -41,6 +41,22 @@ the same bottle turned up at more than one evening — what it scored each time.
 Ch. Musar 2005 is the example to look at: 92.3 at its own evening in 2020, 85.0
 in January 2014, and 65.8 in 2013.
 
+**Events** is the diary: an evening to come — a tasting, a blind tasting, an
+away trip or something else entirely — with the bottles lined up for it. Once it
+has been held, one button moves it into the archive, and its wines land in the
+cellar ready to be scored. A blind evening keeps its bottles' names in the
+database all along and simply refuses to print them until then.
+
+Registering eight bottles on a phone is eight long names to type, so where an
+`ANTHROPIC_API_KEY` is set the "Add a bottle" panel offers to **photograph the
+label** instead: the photo is read by Claude and the form comes back filled in,
+for a person to check and press Add. It writes nothing by itself — a vision
+model reading a decorative label can be confidently wrong, and anything the
+label doesn't say comes back blank rather than guessed. The photo is sent, read
+and dropped; it is never saved or logged, and it costs roughly a tenth of a
+krone a bottle. Without the key the control isn't shown and bottles are typed
+in, which is the path that cannot fail.
+
 **Signing in** is one club password, then you pick your name. That is honestly
 all it is: anyone with the password can pick any name, which is fine for nine
 friends on one laptop and not fine the day this gets a public address. When it

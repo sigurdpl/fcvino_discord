@@ -61,6 +61,25 @@ def test_a_stuck_key_is_read_as_what_it_meant(tmp_path):
     assert any("88787" in n and "88" in n for n in notes), "and says so"
 
 
+def test_a_stuck_key_nobody_has_read_yet_is_left_out(tmp_path):
+    """The guard behind the repairs. `normalise_score` clamps, so an unrepaired
+    47231 would arrive as a perfect 100 rather than fail — and a 100 on a bottle
+    nobody liked is the highest score in the club's history."""
+    notes = []
+    path = export(tmp_path, "New typo", ["1. Ch. Musar 2005", "2. Navn"],
+                  [("2026-01-05 20:00:00", [47231], "Sigurd")])
+    evening = surveys.read_export(path, notes)
+    assert evening.wines[0]["scores"] == {}, "no score, rather than a perfect one"
+    assert any("47231" in n and "not a score" in n for n in notes), "and says so"
+
+
+def test_a_hundred_is_still_a_score(tmp_path):
+    """The club has thirteen of them; the guard must not take them away."""
+    path = export(tmp_path, "Perfect", ["1. Boroli Barolo 2005", "2. Navn"],
+                  [("2026-01-05 20:00:00", [100], "Tore")])
+    assert surveys.read_export(path, []).wines[0]["scores"] == {"Tore": 100}
+
+
 def test_a_zero_is_not_a_verdict_of_nought(tmp_path):
     """The reading the workbook import already gives it: they weren't there."""
     path = export(tmp_path, "Zero", ["1. Ch. Musar 2005", "2. Navn"],

@@ -14,11 +14,13 @@ from datetime import datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 
 from bot.db import utcnow_iso
 
+from .. import label as label_reader
 from .. import queries
 from ..deps import Cfg, Db, LoggedIn, Member, page
 
@@ -127,21 +129,40 @@ async def create(
     return RedirectResponse("/events", status_code=303)
 
 
-@router.get("/{event_id}")
-async def detail(request: Request, db: Db, _: LoggedIn, event_id: int):
-    row = queries.event(db, event_id)
-    if row is None:
-        raise HTTPException(404, "No such event")
+def _detail(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    row,
+    *,
+    error: str | None = None,
+    prefill: dict | None = None,
+    status: int = 200,
+):
+    """The event's own page. Shared, so a refused bottle comes back on it."""
     return page(
         request,
         "events/detail.html",
         event=row,
-        wines=queries.event_wines(db, event_id),
+        wines=queries.event_wines(db, row["id"]),
         now=utcnow_iso(),
         kinds=KINDS,
         pours=row["kind"] in POURING,
-        error=None,
+        error=error,
+        # What a photographed label read as, waiting to be checked. Empty the
+        # rest of the time, which is what an untouched form is.
+        prefill=prefill or {},
+        label_reading=cfg.has_label_reading,
+        status_code=status,
     )
+
+
+@router.get("/{event_id}")
+async def detail(request: Request, db: Db, cfg: Cfg, _: LoggedIn, event_id: int):
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    return _detail(request, db, cfg, row)
 
 
 @router.post("/{event_id}")
@@ -192,6 +213,7 @@ async def remove(request: Request, db: Db, _: LoggedIn, event_id: int):
 async def add_wine(
     request: Request,
     db: Db,
+    cfg: Cfg,
     _: LoggedIn,
     event_id: int,
     name: Annotated[str, Form()] = "",
@@ -207,17 +229,7 @@ async def add_wine(
     if row is None:
         raise HTTPException(404, "No such event")
     if not name.strip():
-        return page(
-            request,
-            "events/detail.html",
-            event=row,
-            wines=queries.event_wines(db, event_id),
-            now=utcnow_iso(),
-            kinds=KINDS,
-            pours=row["kind"] in POURING,
-            error="A bottle needs a name.",
-            status_code=400,
-        )
+        return _detail(request, db, cfg, row, error="A bottle needs a name.", status=400)
     db.add_event_wine(
         event_id,
         name=name.strip(),
@@ -230,6 +242,58 @@ async def add_wine(
         brought_by=_clean(brought_by),
     )
     return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
+@router.post("/{event_id}/wines/label")
+async def read_bottle_label(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    _: LoggedIn,
+    event_id: int,
+    photo: Annotated[UploadFile | None, File()] = None,
+):
+    """Read a photographed label and come back with the bottle form filled in.
+
+    It writes nothing. The model is good at labels and still wrong sometimes, so
+    what it reads lands in the form beside the Add button and a person presses
+    it — the same form, and the same write, as typing the bottle in by hand.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    if not cfg.has_label_reading:
+        raise HTTPException(404, "No label reader configured")
+    if photo is None or not photo.filename:
+        return _detail(request, db, cfg, row, error="No photo came through.", status=400)
+    # Both checked before anything is sent, so a video picked by mistake is
+    # refused here rather than after megabytes have moved. `read_label` checks
+    # them again for its own sake; this is the one that saves the call.
+    if (photo.size or 0) > label_reader.MAX_BYTES:
+        return _detail(
+            request, db, cfg, row,
+            error="That photo is too big — try again, or type it in.", status=400,
+        )
+    if photo.content_type not in label_reader.ALLOWED_TYPES:
+        return _detail(
+            request, db, cfg, row,
+            error="That isn't a photo. Pick an image, or type it in.", status=400,
+        )
+    try:
+        image = await photo.read()
+        # A few seconds on the wire, and this is the one blocking call in the
+        # app — off the event loop so the rest of the page-serving carries on.
+        found = await run_in_threadpool(
+            label_reader.read_label, image, photo.content_type or "", cfg.anthropic_key
+        )
+    except label_reader.LabelUnreadable as exc:
+        return _detail(request, db, cfg, row, error=str(exc), status=400)
+    finally:
+        await photo.close()
+    return _detail(
+        request, db, cfg, row,
+        prefill={k: v for k, v in found.model_dump().items() if v is not None},
+    )
 
 
 @router.post("/{event_id}/wines/{wine_id}/delete")
