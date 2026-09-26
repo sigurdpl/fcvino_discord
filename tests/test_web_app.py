@@ -324,7 +324,7 @@ def test_the_mapping_overrules_the_address(cellar, tmp_path):
 # 4xx and the form's own submit goes through htmx too.
 
 BLANK_FILTERS = {
-    "country": "", "region": "", "grape": "", "member": "",
+    "country": "", "region": "", "grape": "", "brought_by": "", "rated_by": "",
     "year_from": "", "year_to": "", "vintage_from": "", "vintage_to": "",
     "min_score": "",
 }
@@ -1676,3 +1676,77 @@ def test_a_date_nobody_can_read_does_not_lock_the_evening_shut():
     from web.routes.events import _day_has_come
 
     assert _day_has_come({"starts_at": "not a date"}, ZoneInfo("Europe/Oslo")) is True
+
+
+# -- whose score, on the page ----------------------------------------------
+#
+# The cellar fixture: three wines, scored by Andy, Morten and Tore in that
+# order. Ch. Musar is Tore's 91 against a 92.3 average; Boroli is his 78
+# against 80.0 — so "what does Tore like" and "what did the room like" give
+# different answers, which is the whole reason for the filter.
+
+
+def test_the_scored_by_dropdown_offers_everyone_who_rated(signed_in):
+    page = signed_in.get("/wine").text
+    picker = page.split('name="rated_by"')[1].split("</select>")[0]
+    for name in ("Andy", "Morten", "Tore"):
+        assert f"{name} (3)" in picker, "with a count, like the other filters"
+
+
+def test_picking_a_member_shows_their_score_beside_the_average(signed_in):
+    rows = signed_in.get("/wine/results", params={**BLANK_FILTERS, "rated_by": "Tore"}).text
+    assert '<th class="num">Tore</th>' in rows, "a column headed with their name"
+    assert '<th class="num">Average</th>' in rows, "and the room's, to compare"
+    musar = rows.split("Ch. Musar 2005")[1][:260]
+    assert ">91<" in musar, "Tore's own score"
+    assert "92.3" in musar, "and what everyone made of it"
+
+
+def test_the_table_is_untouched_when_nobody_is_picked(signed_in):
+    rows = signed_in.get("/wine/results", params=BLANK_FILTERS).text
+    assert '<th class="num">Score</th>' in rows
+    assert '<th class="num">Average</th>' not in rows
+
+
+def test_the_minimum_follows_the_member_you_picked(signed_in):
+    """Tore gave Ch. Musar 91 and Massolino 86; the room gave them 92.3 and 88."""
+    his = signed_in.get("/wine/results",
+                        params={**BLANK_FILTERS, "rated_by": "Tore", "min_score": "90"}).text
+    assert "Ch. Musar 2005" in his
+    assert "Massolino Barolo 2015" not in his, "he gave it 86, whatever the room said"
+
+    anyones = signed_in.get("/wine/results",
+                            params={**BLANK_FILTERS, "min_score": "90"}).text
+    assert "Ch. Musar 2005" in anyones
+    assert "Massolino" not in anyones
+
+
+def test_a_member_who_missed_an_evening_does_not_see_that_wine(signed_in, cellar):
+    """Andy was not at the Musar evening, so it is not his to have an opinion on."""
+    cellar.execute("DELETE FROM wine_ratings WHERE wine_id=3 AND member_id=1")
+    rows = signed_in.get("/wine/results", params={**BLANK_FILTERS, "rated_by": "Andy"}).text
+    assert "Ch. Musar 2005" not in rows
+    assert "Massolino Barolo 2015" in rows
+
+
+def test_the_label_says_whose_minimum_it_is(signed_in):
+    page = signed_in.get("/wine", params={**BLANK_FILTERS, "rated_by": "Tore"}).text
+    assert "Tore scored at least" in page
+
+
+def test_a_changed_score_is_noticed(signed_in, cellar):
+    """The index is rebuilt on a fingerprint of counts and timestamps. A score
+    that is *edited* moves neither count — and a card resubmitted during an
+    evening does exactly that — so `MAX(rated_at)` is what catches it."""
+    before = signed_in.get("/wine/results",
+                           params={**BLANK_FILTERS, "rated_by": "Tore"}).text
+    assert ">91<" in before.split("Ch. Musar 2005")[1][:260]
+
+    cellar.execute(
+        "UPDATE wine_ratings SET score=60, rated_at=? WHERE wine_id=3 AND member_id=3",
+        ("2027-01-01T12:00:00+00:00",),
+    )
+    after = signed_in.get("/wine/results",
+                          params={**BLANK_FILTERS, "rated_by": "Tore"}).text
+    assert ">60<" in after.split("Ch. Musar 2005")[1][:260]
+

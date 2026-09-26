@@ -33,6 +33,7 @@ def wine(id, name, **kw):
         brought_by=kw.get("brought_by"),
         average=kw.get("average"),
         ratings=kw.get("ratings", 0),
+        scores=kw.get("scores", {}),
     )
 
 
@@ -245,3 +246,88 @@ def test_a_multi_word_query_is_judged_by_its_worst_placed_word():
     """
     (hit,) = Index([ARCHIVE[8]]).search("vino nobile")
     assert hit.band == NAME_WORD
+
+
+# -- whose score? -----------------------------------------------------------
+#
+# The average is nine opinions flattened into one number. These are about
+# getting one of the nine back out: what does this person actually like, and
+# where do they part company with the room.
+
+# A room that agrees, a person who does not. Tore loves the one the club is
+# lukewarm about and dislikes the one it adores, which is what makes the
+# difference between filtering on his score and on the average visible.
+OPINIONS = [
+    wine(1, "Boroli Barolo 2005", country="Italy", average=85.0, ratings=3,
+         scores={"Tore": 95, "Morten": 80, "Andy": 80}),
+    wine(2, "Massolino Barolo 2015", country="Italy", average=95.0, ratings=3,
+         scores={"Tore": 70, "Morten": 99, "Andy": 96}),
+    wine(3, "Ch. Musar 2005", country="Lebanon", average=90.0, ratings=2,
+         scores={"Morten": 90, "Andy": 90}),
+    wine(4, "Nobody Scored Me", country="Norway", average=None, ratings=0),
+]
+OPINIONATED = Index(OPINIONS)
+
+
+def found(index, **kw):
+    return [h.row.name for h in index.search("", Filters(**kw), limit=None)]
+
+
+def test_picking_a_member_drops_what_they_never_scored():
+    names = found(OPINIONATED, rated_by="Tore")
+    assert "Ch. Musar 2005" not in names, "Tore was not there"
+    assert "Nobody Scored Me" not in names, "nobody was"
+    assert sorted(names) == ["Boroli Barolo 2005", "Massolino Barolo 2015"]
+
+
+def test_the_minimum_is_their_score_not_the_rooms():
+    """The whole point: 'Tore, at least 90' means the ones Tore gave 90."""
+    assert found(OPINIONATED, rated_by="Tore", min_score=90) == ["Boroli Barolo 2005"]
+    # The club's 95.0 average counts for nothing here — he gave it 70.
+    assert "Massolino Barolo 2015" not in found(
+        OPINIONATED, rated_by="Tore", min_score=90)
+
+
+def test_without_a_member_the_minimum_is_still_the_average():
+    names = found(OPINIONATED, min_score=90)
+    assert sorted(names) == ["Ch. Musar 2005", "Massolino Barolo 2015"]
+    assert "Boroli Barolo 2005" not in names, "the room gave it 85"
+
+
+def test_their_score_decides_the_order():
+    assert found(OPINIONATED, rated_by="Tore") == [
+        "Boroli Barolo 2005",       # he gave it 95
+        "Massolino Barolo 2015",    # and this one 70
+    ]
+
+
+def test_a_text_query_still_outranks_their_score():
+    """Relevance first; their score only orders the wines inside a band."""
+    hits = OPINIONATED.search("barolo", Filters(rated_by="Tore"), limit=None)
+    assert [h.row.name for h in hits] == [
+        "Boroli Barolo 2005", "Massolino Barolo 2015",
+    ]
+    assert all(h.band == NAME_WORD for h in hits)
+
+
+def test_who_brought_it_is_a_different_question():
+    """Two filters that were both called `member` until they met."""
+    archive = Index([
+        wine(1, "Carried by Tore", brought_by="Tore", scores={"Andy": 90}),
+        wine(2, "Scored by Tore", brought_by="Andy", scores={"Tore": 90}),
+    ])
+    assert found(archive, brought_by="Tore") == ["Carried by Tore"]
+    assert found(archive, rated_by="Tore") == ["Scored by Tore"]
+
+
+def test_the_raters_dropdown_counts_what_each_one_scored():
+    assert OPINIONATED.raters() == [("Andy", 3), ("Morten", 3), ("Tore", 2)]
+
+
+def test_a_wine_nobody_scored_carries_no_scores():
+    """The default is shared, so nothing may write into it."""
+    assert wine(9, "Untouched").scores == {}
+    with pytest.raises(TypeError):
+        Row(id=9, name="x", country=None, region=None, grape=None, vintage=None,
+            theme=None, year=None, brought_by=None, average=None,
+            ratings=0).scores["Tore"] = 90
