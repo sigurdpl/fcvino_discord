@@ -2,8 +2,19 @@
 {% block title %}Cellar · FC Vino{% endblock %}
 {% block body %}
 
+{#- The triggers sit on the form and not on any one control. `from:find x`
+    resolves to a *single* element in htmx — `htmx.find` is a querySelector —
+    so scoping them that way listened to the search box and the Country
+    dropdown and to nothing else, which left eight of the nine filters dead
+    unless you pressed Enter. `change` and `input` both bubble, so the form
+    hears every one of them.
+
+    hx-sync because a <select> fires `input` as well as `change`, and the two
+    would otherwise send a request each; `replace` drops whichever is still in
+    flight, which also stops fast typing landing out of order. -#}
 <form class="card search" hx-get="/wine/results" hx-target="#results"
-      hx-trigger="input changed delay:150ms from:find input, change from:find select"
+      hx-trigger="change, input changed delay:250ms"
+      hx-sync="this:replace"
       hx-push-url="false" hx-indicator="#spin">
   <div class="searchbox">
     <span class="glass">🔍</span>

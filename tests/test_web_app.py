@@ -1750,3 +1750,28 @@ def test_a_changed_score_is_noticed(signed_in, cellar):
                           params={**BLANK_FILTERS, "rated_by": "Tore"}).text
     assert ">60<" in after.split("Ch. Musar 2005")[1][:260]
 
+
+# -- the filters have to reach the server to filter -------------------------
+
+
+def test_every_control_can_trigger_the_search(signed_in):
+    """`from:find select` resolves to *one* element in htmx, so scoping the
+    triggers that way listened to the search box and the Country dropdown and
+    to nothing else — eight of the nine filters did nothing unless you pressed
+    Enter. The triggers belong on the form, where bubbling reaches them all."""
+    # By class, not position: the chrome's "who are you?" form comes first.
+    form = signed_in.get("/wine").text.split('<form class="card search"', 1)[1]
+    attributes = form.split(">", 1)[0]
+    assert "from:find" not in attributes, "scoping a trigger to one control kills the rest"
+    assert "change" in attributes, "dropdowns fire change"
+    assert "input changed" in attributes, "and typing is still debounced"
+
+
+def test_the_search_form_has_the_controls_those_triggers_cover(signed_in):
+    """If a filter is added later it is covered by the form-level triggers, so
+    this only has to notice that they are all inside the one form."""
+    page = signed_in.get("/wine").text
+    form = page.split('<form class="card search"', 1)[1].split("</form>", 1)[0]
+    for name in ("q", "country", "region", "grape", "brought_by", "rated_by",
+                 "year_from", "year_to", "vintage_from", "vintage_to", "min_score"):
+        assert f'name="{name}"' in form, f"{name} is outside the form that listens"
