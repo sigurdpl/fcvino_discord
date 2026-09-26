@@ -1775,3 +1775,27 @@ def test_the_search_form_has_the_controls_those_triggers_cover(signed_in):
     for name in ("q", "country", "region", "grape", "brought_by", "rated_by",
                  "year_from", "year_to", "vintage_from", "vintage_to", "min_score"):
         assert f'name="{name}"' in form, f"{name} is outside the form that listens"
+
+
+def test_a_missing_sdk_reads_as_a_sentence(monkeypatch):
+    """A key set and `anthropic` not installed is a real state — it is the
+    machine the club runs the app on today. `sys.modules[name] = None` is what
+    makes `import anthropic` fail the way it would there."""
+    import sys
+
+    from web.label import LabelUnreadable, read_label
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    with pytest.raises(LabelUnreadable, match="isn't installed"):
+        read_label(b"a photo", "image/jpeg", "a-key")
+
+
+def test_a_missing_sdk_leaves_the_bottle_addable_by_hand(with_camera, evening, monkeypatch):
+    """The promise the whole feature rests on: it comes back as a page."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "anthropic", None)
+    response = shoot(with_camera, evening)
+    assert response.status_code == 400, "a sentence, not a stack trace"
+    assert "isn&#39;t installed" in response.text
+    assert 'name="name"' in response.text, "and the form is still there"
