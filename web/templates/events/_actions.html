@@ -1,6 +1,9 @@
 {#- Edit and delete for one row, in both tables. Delete is a form rather than a
     link because it changes something, and it asks first: there is no undo. -#}
 <span class="inline">
+  {#- While an evening is being voted on, the scoring page is the only one
+      anybody wants; it goes first for that reason. -#}
+  {% if e['started_at'] and not e['tasting_id'] %}<a href="/events/{{ e['id'] }}/vote">Score</a>{% endif %}
   <a href="/events/{{ e['id'] }}">Edit</a>
   <form method="post" action="/events/{{ e['id'] }}/delete" style="display: inline">
     <button class="quiet" type="submit"

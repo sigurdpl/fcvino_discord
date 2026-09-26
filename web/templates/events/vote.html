@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Scoring {{ event['theme'] }} · FC Vino{% endblock %}
+{% block body %}
+
+<section class="card">
+  <p class="crumb"><a href="/events/{{ event['id'] }}">← the evening</a></p>
+  <h1>
+    {{ event['theme'] }}
+    {% if hidden %}<span class="pill">blind</span>{% endif %}
+  </h1>
+  <p class="muted">
+    {{ fmt_span(event['starts_at'], event['ends_at']) }}
+    {%- if event['location'] %} · at {{ event['location'] }}'s{% endif %}
+    {%- if member_name %} · scoring as <span class="strong">{{ member_name }}</span>{% endif %}
+  </p>
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if saved %}
+    <p class="ok">Your card is in. Change anything you like and submit again —
+      nothing is final until the evening is closed.</p>
+  {% endif %}
+
+  {% if not member %}
+    {#- A vote has to belong to somebody. Filing it under nobody would be
+        worse than asking. -#}
+    <p class="error">
+      Tell us who you are before you score — the picker is at the top of this
+      page, and it brings you straight back here.
+    </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>The wines</h2>
+  <p class="muted small">
+    Robert Parker's hundred, {{ scale[0] }} down to {{ scale[-1] }}, with
+    {{ usual }} marked as the usual starting point. Nothing is chosen until you
+    choose it, so a wine you leave blank records nothing at all. Type a number
+    instead if you would rather — that box will take anything from 1 to 100.
+  </p>
+
+  <form method="post" action="/events/{{ event['id'] }}/vote" class="ballot">
+    {% for w in wines %}
+    <div class="pour">
+      <div class="pour-wine">
+        <span class="avatar sm">{{ loop.index }}</span>
+        <div>
+          {% if hidden %}
+            <div class="name">Wine {{ loop.index }}</div>
+            <div class="muted small">named when the evening is closed</div>
+          {% else %}
+            <div class="name">{{ w['name'] }}{% if w['vintage'] %} {{ w['vintage'] }}{% endif %}</div>
+            <div class="muted small">
+              {{ [w['producer'], w['country'], w['region'], w['grape']] | select | join(' · ') or '—' }}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+      {#- Two ways in for one number. The select is a wheel picker on a phone
+          and needs no JavaScript to submit; the box beside it brings up the
+          numeric keypad for anyone who already knows what they want. -#}
+      <div class="pour-score">
+        <select name="score-{{ w['id'] }}" aria-label="Score for wine {{ loop.index }}">
+          <option value="">—</option>
+          {% for n in scale %}
+            <option value="{{ n }}" {{ 'selected' if card.get(w['id']) == n }}>
+              {{ n }}{% if n == usual %} · usual start{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <input type="number" name="typed-{{ w['id'] }}" inputmode="numeric"
+               min="1" max="100" placeholder="type"
+               value="{{ card.get(w['id'], '') }}"
+               aria-label="Or type a score for wine {{ loop.index }}">
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">No bottles lined up, so there is nothing to score.</p>
+    {% endfor %}
+
+    {% if wines %}
+    <button type="submit" {{ 'disabled' if not member }}>Submit answers</button>
+    {% endif %}
+  </form>
+</section>
+
+<section class="card">
+  <h2>Submitted</h2>
+  {#- Names only. Nobody sees a number before the reveal, and on a blind
+      evening that is not a nicety. -#}
+  {% if voted %}
+    <p>{{ voted | join(', ') }} — {{ voted | length }} of {{ totals['members'] }}.</p>
+  {% else %}
+    <p class="muted">Nobody yet.</p>
+  {% endif %}
+  <p class="muted small">
+    When everyone is done, close the evening from
+    <a href="/events/{{ event['id'] }}">its page</a>: the bottles and every
+    score go into the cellar{% if hidden %}, and the wines are named{% endif %}.
+  </p>
+</section>
+
+<script>
+  // The two controls are one number. Whichever you touch, the other follows;
+  // the form posts both and the typed box wins, so this only keeps the page
+  // honest about what it is about to send. Without it the select still works.
+  document.querySelectorAll('.pour-score').forEach(function (row) {
+    var picked = row.querySelector('select');
+    var typed = row.querySelector('input');
+    picked.addEventListener('change', function () { typed.value = picked.value; });
+    typed.addEventListener('input', function () {
+      picked.value = [...picked.options].some(function (o) { return o.value === typed.value; })
+        ? typed.value : '';
+    });
+  });
+</script>
+
+{% endblock %}

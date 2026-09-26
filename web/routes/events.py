@@ -18,11 +18,11 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 
-from bot.db import utcnow_iso
+from bot.db import parse_utc, utcnow_iso
 
 from .. import label as label_reader
 from .. import queries
-from ..deps import Cfg, Db, LoggedIn, Member, page
+from ..deps import Cfg, Db, LoggedIn, Member, fmt_day, page
 
 router = APIRouter(prefix="/events")
 
@@ -35,6 +35,37 @@ KINDS = {
     "other": "Something else",
 }
 POURING = ("tasting", "blind")      # the kinds that have bottles
+
+# The Robert Parker scale, as the club uses it. The dropdown stops at 50
+# because nothing much below that gets poured twice; the typed box goes lower,
+# since the club's own history holds 64 ratings under 50 and the table allows
+# 1–100. 85 is where the list opens — the usual starting point, marked but not
+# chosen, so a wine nobody got to records nothing rather than a score nobody gave.
+SCALE = tuple(range(100, 49, -1))
+USUAL = 85
+LOWEST, HIGHEST = 1, 100
+
+
+def _day_has_come(row, tz: ZoneInfo, now: datetime | None = None) -> bool:
+    """Whether the evening's own day has arrived, in the club's timezone.
+
+    An evening can be started on its day or later, never before: the club sits
+    down at seven whatever the diary says, so running early on the night itself
+    is normal, and an idle click on next January's row is not.
+
+    Local *dates*, not instants. `starts_at` is stored in UTC, and an evening
+    at 00:30 on the 7th in Oslo is 22:30 on the 6th in UTC — compare the stored
+    values and that one opens a day early.
+
+    An unreadable date says yes. It cannot happen, since the column is NOT NULL
+    and only `_to_utc` writes it; if it ever did, locking the club out of its
+    own evening would be the worse failure.
+    """
+    try:
+        day = parse_utc(row["starts_at"]).astimezone(tz).date()
+    except (ValueError, TypeError):
+        return True
+    return day <= (now or datetime.now(tz)).astimezone(tz).date()
 
 
 def _clean(value: str | None) -> str | None:
@@ -148,6 +179,9 @@ def _detail(
         now=utcnow_iso(),
         kinds=KINDS,
         pours=row["kind"] in POURING,
+        # Computed here rather than reassembled in Jinja, so the button and the
+        # route that refuses the same press cannot drift apart.
+        too_early=not _day_has_come(row, cfg.tz),
         error=error,
         # What a photographed label read as, waiting to be checked. Empty the
         # rest of the time, which is what an untouched form is.
@@ -302,10 +336,147 @@ async def remove_wine(request: Request, db: Db, _: LoggedIn, event_id: int, wine
     return RedirectResponse(f"/events/{event_id}", status_code=303)
 
 
-@router.post("/{event_id}/promote")
-async def promote(request: Request, db: Db, _: LoggedIn, event_id: int):
-    """Move a held evening into the archive, where the club's history lives."""
+@router.post("/{event_id}/close")
+async def close(request: Request, db: Db, _: LoggedIn, event_id: int):
+    """The end of an evening: its bottles and its scores join the archive.
+
+    Called close rather than promote because that is what the club presses —
+    `db.promote_event` keeps the older name, since filing an evening in the
+    archive is what this does to the *history*, and closing is what it does to
+    the *event*. Pressing it twice is harmless; the second does nothing.
+    """
     if queries.event(db, event_id) is None:
         raise HTTPException(404, "No such event")
     db.promote_event(event_id)
     return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
+# -- the voting page --------------------------------------------------------
+#
+# The first thing this app does *during* an evening rather than after it. The
+# bottles are already staged in `event_wines`; the scores stage beside them in
+# `event_votes`, and neither reaches the cellar until somebody closes the
+# evening. That is what lets a card be changed all night and still leave one
+# clean row per member in fifteen years of history.
+
+
+def _open_for_voting(row) -> str | None:
+    """Why this evening cannot be voted on, or None when it can be.
+
+    One place, because there are four ways to get it wrong and each of them
+    should say what is actually true rather than 404 at a puzzled member.
+    """
+    if row["kind"] not in POURING:
+        return "Only a tasting is scored."
+    if not row["started_at"]:
+        return "This evening has not started yet."
+    if row["tasting_id"]:
+        return "This evening is closed — its scores are in the cellar now."
+    return None
+
+
+def _vote_page(request: Request, db: Db, row, member, *,
+               error: str | None = None, saved: bool = False,
+               card: dict[int, int] | None = None, status: int = 200):
+    wines = queries.event_wines(db, row["id"])
+    return page(
+        request,
+        "events/vote.html",
+        event=row,
+        wines=wines,
+        kinds=KINDS,
+        # A blind evening's bottles stay Wine 1 … Wine N until it is closed,
+        # which is the entire point of the names living in the database while
+        # the page declines to print them.
+        hidden=row["kind"] == "blind" and not row["tasting_id"],
+        scale=SCALE,
+        usual=USUAL,
+        card=card if card is not None else (
+            queries.my_votes(db, row["id"], member[0]) if member else {}
+        ),
+        voted=queries.who_has_voted(db, row["id"]),
+        error=error,
+        saved=saved,
+        status_code=status,
+    )
+
+
+@router.get("/{event_id}/vote")
+async def vote(request: Request, db: Db, cfg: Cfg, member: Member, _: LoggedIn,
+               event_id: int):
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    closed = _open_for_voting(row)
+    if closed:
+        return _detail(request, db, cfg, row, error=closed, status=409)
+    # Set by the redirect after a submit, so a reload cannot re-post the card
+    # and the page can still say the scores landed.
+    return _vote_page(request, db, row, member,
+                      saved=request.query_params.get("saved") == "1")
+
+
+@router.post("/{event_id}/start")
+async def start(request: Request, db: Db, cfg: Cfg, _: LoggedIn, event_id: int):
+    """Open the voting, and take whoever pressed it straight to the page."""
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    if row["kind"] not in POURING:
+        return _detail(request, db, cfg, row, error="Only a tasting is scored.", status=400)
+    # The greyed button is a hint to a person; this is the rule. Anyone can
+    # post the form, and starting an evening cannot be undone.
+    if not _day_has_come(row, cfg.tz):
+        return _detail(
+            request, db, cfg, row, status=400,
+            error=f"Too early — this evening can be started on "
+                  f"{fmt_day(row['starts_at'], str(cfg.tz))}.",
+        )
+    if not queries.event_wines(db, event_id):
+        return _detail(request, db, cfg, row,
+                       error="Line up at least one bottle first.", status=400)
+    db.start_event(event_id)
+    return RedirectResponse(f"/events/{event_id}/vote", status_code=303)
+
+
+@router.post("/{event_id}/vote")
+async def cast(request: Request, db: Db, cfg: Cfg, member: Member, _: LoggedIn,
+               event_id: int):
+    """One member's whole card at once, replacing whatever they said before.
+
+    The form posts `score-<event_wine_id>` per bottle, and the typed box wins
+    over the dropdown when they disagree — the page keeps them in step, but the
+    person who typed a number meant it.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    closed = _open_for_voting(row)
+    if closed:
+        return _detail(request, db, cfg, row, error=closed, status=409)
+    if member is None:
+        # A vote has to belong to somebody; the page says so and links to the
+        # prompt rather than filing it under nobody.
+        return _vote_page(request, db, row, member,
+                          error="Tell us who you are first.", status=400)
+
+    form = await request.form()
+    card: dict[int, int] = {}
+    for wine in queries.event_wines(db, event_id):
+        typed = str(form.get(f"typed-{wine['id']}") or "").strip()
+        picked = str(form.get(f"score-{wine['id']}") or "").strip()
+        given = typed or picked
+        if not given:
+            continue                      # a bottle nobody got to stays blank
+        try:
+            score = int(given)
+        except ValueError:
+            return _vote_page(request, db, row, member, card=card, status=400,
+                              error=f"{given!r} is not a score.")
+        if not LOWEST <= score <= HIGHEST:
+            return _vote_page(request, db, row, member, card=card, status=400,
+                              error=f"{score} is not on the scale — it runs 1 to 100.")
+        card[wine["id"]] = score
+
+    db.record_votes(event_id, member[0], card)
+    return RedirectResponse(f"/events/{event_id}/vote?saved=1", status_code=303)

@@ -101,6 +101,11 @@ def cellar(db) -> Database:
                     ends_at=None, location="Morten's", host="Morten", country="Norway",
                     notes=None, created_by="Robert")
     db.add_event_wine(1, name="Lined up", vintage=2021, brought_by="Andy")
+    db.add_event_wine(1, name="Also lined up", brought_by="Håvard")
+    # Caught mid-vote: one card in, one bottle still blank, which is exactly
+    # the state a rebuild would find an evening in if the laptop died at 21:30.
+    db.start_event(1)
+    db.record_votes(1, 1, {1: 88})
     db.create_event(kind="trip", theme="Bilbao again", starts_at="2027-06-01T08:00:00+00:00",
                     ends_at="2027-06-03T20:00:00+00:00", location=None, host=None,
                     country="Spain", notes=None, created_by="Tore")
@@ -161,13 +166,19 @@ COMPARE = {
                      JOIN trips t ON t.id = m.trip_id
                      ORDER BY t.year, m.home, IFNULL(g.minute, 999), g.scorer""",
     "events": """SELECT e.kind, e.theme, e.location, e.host, e.country, e.starts_at,
-                        e.ends_at, e.notes, e.created_by, e.created_at, t.key, tr.year
+                        e.ends_at, e.notes, e.created_by, e.created_at,
+                        e.started_at, t.key, tr.year
                  FROM events e LEFT JOIN tastings t ON t.id = e.tasting_id
                  LEFT JOIN trips tr ON tr.id = e.trip_id
                  ORDER BY e.starts_at, e.theme""",
     "event_wines": """SELECT e.theme, w.name, w.vintage, w.brought_by, w.position, w.added_at
                       FROM event_wines w JOIN events e ON e.id = w.event_id
                       ORDER BY e.starts_at, w.position""",
+    "event_votes": """SELECT e.theme, w.name, m.name, v.score, v.notes, v.voted_at
+                      FROM event_votes v JOIN event_wines w ON w.id = v.event_wine_id
+                      JOIN events e ON e.id = w.event_id
+                      JOIN wine_members m ON m.id = v.member_id
+                      ORDER BY e.starts_at, w.position, m.name""",
 }
 
 
@@ -223,6 +234,18 @@ def test_a_note_on_a_score_survives(cellar, rebuilt, tmp_path):
     assert "smoky, long" in written["wines"]
     kept = rebuilt.query_one("SELECT notes FROM wine_ratings WHERE notes IS NOT NULL")
     assert kept["notes"] == "smoky, long"
+
+
+def test_an_evening_caught_mid_vote_survives(cellar, rebuilt, tmp_path):
+    """A rebuild at 21:30 must not lose the cards already submitted."""
+    written = write(cellar, tmp_path)
+    assert "voted_at" in written["events"], "the file carries when it was scored"
+    standing = rebuilt.query_one(
+        """SELECT v.score, m.name FROM event_votes v
+           JOIN wine_members m ON m.id = v.member_id"""
+    )
+    assert (standing["score"], standing["name"]) == (88, "Andy")
+    assert rebuilt.query_one("SELECT started_at FROM events WHERE theme='Still to come'")[0]
 
 
 def test_a_guest_is_still_a_guest(cellar, rebuilt):

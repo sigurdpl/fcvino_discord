@@ -147,7 +147,10 @@ def load_trips(db: Database, document: dict, now: str) -> dict[str, int]:
 
 
 def load_events(db: Database, document: dict, now: str) -> dict[str, int]:
-    counts = {"events": 0, "bottles": 0}
+    counts = {"events": 0, "bottles": 0, "votes": 0}
+    members = {
+        row["name"]: row["id"] for row in db.query("SELECT id, name FROM wine_members")
+    }
     for entry in document.get("events") or []:
         tasting_id = trip_id = None
         if entry.get("tasting"):
@@ -159,16 +162,17 @@ def load_events(db: Database, document: dict, now: str) -> dict[str, int]:
         event_id = db.execute(
             """INSERT INTO events (kind, theme, location, host, country, starts_at,
                                    ends_at, notes, tasting_id, trip_id,
-                                   created_by, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                   created_by, created_at, started_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (entry.get("kind", "tasting"), entry["theme"], entry.get("location"),
              entry.get("host"), entry.get("country"), entry["starts_at"],
              entry.get("ends_at"), entry.get("notes"), tasting_id, trip_id,
-             entry.get("created_by"), _at(entry, "created_at", now)),
+             entry.get("created_by"), _at(entry, "created_at", now),
+             entry.get("started_at")),
         )
         counts["events"] += 1
         for seat, wine in enumerate(entry.get("wines") or [], start=1):
-            db.execute(
+            wine_id = db.execute(
                 """INSERT INTO event_wines (event_id, name, producer, vintage, country,
                                             region, grape, price_nok, brought_by,
                                             position, added_at)
@@ -179,6 +183,23 @@ def load_events(db: Database, document: dict, now: str) -> dict[str, int]:
                  _at(wine, "added_at", now)),
             )
             counts["bottles"] += 1
+            # An evening caught mid-vote: the cards are restored with it, so a
+            # rebuild in the middle of a tasting loses nobody's scoring.
+            for who, given in (wine.get("scores") or {}).items():
+                detail = given if isinstance(given, dict) else {"score": given}
+                if who not in members:
+                    raise SystemExit(
+                        f"{entry['theme']}: {wine['name']!r} was scored by {who!r}, "
+                        "who is not a member of the club"
+                    )
+                db.execute(
+                    """INSERT INTO event_votes (event_wine_id, member_id, score,
+                                                notes, voted_at)
+                       VALUES (?,?,?,?,?)""",
+                    (wine_id, members[who], detail["score"], detail.get("notes"),
+                     _at(detail, "voted_at", now)),
+                )
+                counts["votes"] += 1
     return counts
 
 
