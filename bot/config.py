@@ -33,6 +33,11 @@ FREE_COMPETITIONS: dict[str, str] = {
 }
 
 
+# The club's own archive. Any other filename is a copy, and `Config.sandbox`
+# has the pages say so.
+PRODUCTION_DB = "fcvino.sqlite3"
+
+
 class ConfigError(RuntimeError):
     """Raised when the environment is not usable. The message is user-facing."""
 
@@ -57,6 +62,18 @@ class Config:
     @property
     def has_football(self) -> bool:
         return bool(self.football_token)
+
+    @property
+    def sandbox(self) -> bool:
+        """Whether this is serving a throwaway copy rather than the club's own.
+
+        Derived from the database being served, not from a flag, because a flag
+        is a thing to forget on the day it matters most — the day the site goes
+        back to production and somebody carries on entering an evening into a
+        copy. The club's archive is `fcvino.sqlite3`; anything else is a copy,
+        and the pages say so.
+        """
+        return self.db_path.name != PRODUCTION_DB
 
     @property
     def has_label_reading(self) -> bool:

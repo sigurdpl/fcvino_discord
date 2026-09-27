@@ -444,3 +444,12 @@ tr.lifting { background: var(--surface-2); opacity: .75; }
 @media (max-width: 34rem) {
   .bottle { width: 5rem; height: 6.5rem; }
 }
+
+/* -- the test-data strip ------------------------------------------------- */
+
+/* Loud on purpose. It is the only thing telling two people that the evening
+   they are entering will not be there tomorrow. */
+.sandbox-strip {
+  background: var(--red); color: #fff; text-align: center;
+  padding: .45rem 1rem; font-size: .9rem; letter-spacing: .01em;
+}

@@ -67,13 +67,24 @@ the misses are wines Polet no longer sells, and it would rather find nothing
 than hang the wrong grower's label on a bottle. Their vintage is whatever they
 are selling now, not the year the club drank.
 
-**To try any of that out** without it landing in the cellar, run
-`python scripts/sandbox.py`. It copies the database to `data/sandbox.sqlite3`
-and serves the app from the copy on port 8001, so you can register an evening,
-score it and press Close with the real database untouched — which matters,
-because Close is the one button in the app that does not come back. Each run
-starts from a fresh copy; `--keep` carries on with the last one. When you are
-done, delete the file.
+**Running it** is one command either way, and which database it serves has to
+be said out loud — there is no default, because the two look identical from the
+outside:
+
+```bash
+python scripts/serve.py --live                      # the club's archive, :8000
+python scripts/serve.py --sandbox                   # a throwaway copy, :8001
+python scripts/serve.py --sandbox --port 8000 --keep --behind-cloudflare
+```
+
+A sandbox is copied from the live database through sqlite (not `cp` — the
+database is in WAL mode and a file copy can be a copy of the past), so you can
+register an evening, score it and press Close with the real one untouched —
+which matters, because Close is the one button in the app that does not come
+back. Each run starts fresh; `--keep` carries on with the last copy.
+`--behind-cloudflare` is for serving a sandbox through the tunnel, where Access
+should stay on. Every page of a sandbox carries a **Test data** strip, and that
+follows the file rather than the flag, so it cannot be left on by mistake.
 
 **Signing in** is one club password, then you pick your name. That is honestly
 all it is: anyone with the password can pick any name, which is fine for nine

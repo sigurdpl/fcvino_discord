@@ -257,6 +257,10 @@ def page(request: Request, template: str, *, status_code: int = 200, **context):
     # everywhere, the way a group's member count does.
     context.setdefault("members", _members(request))
     context.setdefault("totals", _totals(request))
+    # Every page, because a strip that appears on some pages and not others is
+    # worse than none: it teaches people to stop looking for it.
+    cfg = getattr(request.app.state, "cfg", None)
+    context.setdefault("sandbox", bool(cfg and cfg.sandbox))
     return templates.TemplateResponse(
         request,
         template,
