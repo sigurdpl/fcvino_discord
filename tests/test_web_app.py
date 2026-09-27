@@ -2134,6 +2134,21 @@ def test_the_camera_hands_its_picture_to_the_upload_that_already_works(with_came
     assert page.count(f'action="/events/{evening}/wines/label"') == 1
 
 
+def test_both_bottle_panels_can_be_closed_without_a_keyboard(signed_in, cellar):
+    """Escape is a keyboard's way out, and the club fills this form in on a
+    phone. Every panel that opens over the page gets a visible one too."""
+    event_id = three_bottles(signed_in, cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+
+    cancels = re.findall(r"<button[^>]*data-shuts[^>]*>", page)
+    assert len(cancels) == 4, "one per bottle's edit panel, and one on the add form"
+    for button in cancels:
+        assert 'type="button"' in button, \
+            "a bare button inside a form submits it — Cancel would add a blank bottle"
+        assert "hidden" in button, \
+            "revealed by the script that makes it work, so it is never a dead control"
+
+
 def test_each_bottle_is_one_row_with_its_form_marked_as_following(signed_in, cellar):
     """The drag moves a bottle and its Edit form together, and finds the form
     by `data-follows`. If that marker or the row order ever drifts, a drag

@@ -202,6 +202,9 @@
                 </label>
               </div>
               <button type="submit">Save this bottle</button>
+              {#- A phone has no Escape key. `type` matters: a bare button
+                  inside a form submits it. -#}
+              <button type="button" class="quiet" data-shuts hidden>Cancel</button>
             </form>
           </td>
         </tr>
@@ -259,6 +262,7 @@
         </label>
       </div>
       <button type="submit">Add</button>
+      <button type="button" class="quiet" data-shuts hidden>Cancel</button>
     </form>
   </details>
 </section>
@@ -454,6 +458,16 @@
       });
       if (window.fvStopCameras) window.fvStopCameras();
     }
+
+    {#- Escape is a keyboard's way out and the club does this standing in
+        somebody's kitchen, so there is a visible one too. Rendered hidden and
+        revealed here, the way the camera button is: without this script it
+        would be a control that does nothing, and the ▲▼ buttons on this page
+        go to some trouble not to be that. -#}
+    document.querySelectorAll('[data-shuts]').forEach(function (button) {
+      button.hidden = false;
+      button.addEventListener('click', shut);
+    });
 
     document.querySelectorAll('[data-edits]').forEach(function (button) {
       button.addEventListener('click', function () {
