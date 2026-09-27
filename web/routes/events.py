@@ -10,6 +10,7 @@ promise not to write.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -28,13 +29,20 @@ router = APIRouter(prefix="/events")
 
 # What the club plans. `bot/db.py` documents what each means; the labels are
 # what the dropdown shows.
+# Two different blind evenings, and they are not the same shape. A `blind` has
+# one person responsible who registers the bottles properly beforehand, and the
+# page prints Wine 1 … Wine N until it closes. A `byo` is nine members with
+# nine bottles nobody knows in advance: they go in as placeholders and are
+# revealed one at a time during the evening, which is exactly when somebody
+# needs to photograph a label and put the real name in.
 KINDS = {
     "tasting": "Tasting",
     "blind": "Blind tasting",
+    "byo": "Bring your own",
     "trip": "Away trip",
     "other": "Something else",
 }
-POURING = ("tasting", "blind")      # the kinds that have bottles
+POURING = ("tasting", "blind", "byo")      # the kinds that have bottles
 
 # The Robert Parker scale, as the club uses it. The dropdown stops at 50
 # because nothing much below that gets poured twice; the typed box goes lower,
@@ -66,6 +74,18 @@ def _day_has_come(row, tz: ZoneInfo, now: datetime | None = None) -> bool:
     except (ValueError, TypeError):
         return True
     return day <= (now or datetime.now(tz)).astimezone(tz).date()
+
+
+# `Wine 3`, `wine3`, `Vin 3` — a bottle still carrying the name it was given
+# before anybody knew what it was. Nothing refuses them: the club's own archive
+# holds `Vin 1` from a survey that went in that way. They are only counted, so
+# that closing a BYO evening says what is about to be filed.
+PLACEHOLDER = re.compile(r"^\s*(wine|vin)\s*\d+\s*$", re.IGNORECASE)
+
+
+def _unnamed(wines) -> int:
+    """How many bottles are still called Wine N."""
+    return sum(bool(PLACEHOLDER.match(w["name"] or "")) for w in wines)
 
 
 def _clean(value: str | None) -> str | None:
@@ -168,14 +188,19 @@ def _detail(
     *,
     error: str | None = None,
     prefill: dict | None = None,
+    editing: int | None = None,
     status: int = 200,
 ):
     """The event's own page. Shared, so a refused bottle comes back on it."""
+    wines = queries.event_wines(db, row["id"])
     return page(
         request,
         "events/detail.html",
         event=row,
-        wines=queries.event_wines(db, row["id"]),
+        wines=wines,
+        # Said before closing, not after: a bottle filed as "Wine 3" joins a
+        # cellar of named ones and nothing there can tell you what it was.
+        unnamed=_unnamed(wines),
         now=utcnow_iso(),
         kinds=KINDS,
         pours=row["kind"] in POURING,
@@ -186,6 +211,9 @@ def _detail(
         # What a photographed label read as, waiting to be checked. Empty the
         # rest of the time, which is what an untouched form is.
         prefill=prefill or {},
+        # Which bottle's edit panel to open, and whose fields `prefill` belongs
+        # to. None means the panel that adds a new one.
+        editing=editing,
         label_reading=cfg.has_label_reading,
         status_code=status,
     )
@@ -278,6 +306,63 @@ async def add_wine(
     return RedirectResponse(f"/events/{event_id}", status_code=303)
 
 
+async def _read_label(photo: UploadFile | None, cfg) -> dict:
+    """The photograph as a dict of fields, or raise LabelUnreadable saying why.
+
+    Shared by the two label routes — adding a bottle and correcting one — so a
+    photograph is checked, sized and read exactly once in this codebase.
+    """
+    if not cfg.has_label_reading:
+        raise HTTPException(404, "No label reader configured")
+    if photo is None or not photo.filename:
+        raise label_reader.LabelUnreadable("No photo came through.")
+    if (photo.size or 0) > label_reader.MAX_BYTES:
+        raise label_reader.LabelUnreadable("That photo is too big — try again, or type it in.")
+    if photo.content_type not in label_reader.ALLOWED_TYPES:
+        raise label_reader.LabelUnreadable("That isn't a photo. Pick an image, or type it in.")
+    try:
+        image = await photo.read()
+        found = await run_in_threadpool(
+            label_reader.read_label, image, photo.content_type or "", cfg.anthropic_key
+        )
+    finally:
+        await photo.close()
+    return {k: v for k, v in found.model_dump().items() if v is not None}
+
+
+@router.post("/{event_id}/wines/{wine_id}/label")
+async def read_label_for_bottle(
+    request: Request,
+    db: Db,
+    cfg: Cfg,
+    _: LoggedIn,
+    event_id: int,
+    wine_id: int,
+    photo: Annotated[UploadFile | None, File()] = None,
+):
+    """Photograph a bottle already on the list and fill its own form in.
+
+    What a BYO evening is for: the wines go in as Wine 1, Wine 2, nobody knows
+    whose is whose, and they are revealed one at a time as the evening goes on.
+    At the reveal somebody points a phone at the bottle and this puts what the
+    label says into that row's form, for them to check and press Save.
+
+    Writes nothing, like its twin above — the model reading a decorative label
+    can be confidently wrong, and a name in the cellar outlives the evening.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    if row["kind"] == "blind" and not row["tasting_id"]:
+        return _detail(request, db, cfg, row, status=400,
+                       error="A blind evening's bottles are named when it closes.")
+    try:
+        found = await _read_label(photo, cfg)
+    except label_reader.LabelUnreadable as exc:
+        return _detail(request, db, cfg, row, error=str(exc), editing=wine_id, status=400)
+    return _detail(request, db, cfg, row, prefill=found, editing=wine_id)
+
+
 @router.post("/{event_id}/wines/label")
 async def read_bottle_label(
     request: Request,
@@ -296,38 +381,11 @@ async def read_bottle_label(
     row = queries.event(db, event_id)
     if row is None:
         raise HTTPException(404, "No such event")
-    if not cfg.has_label_reading:
-        raise HTTPException(404, "No label reader configured")
-    if photo is None or not photo.filename:
-        return _detail(request, db, cfg, row, error="No photo came through.", status=400)
-    # Both checked before anything is sent, so a video picked by mistake is
-    # refused here rather than after megabytes have moved. `read_label` checks
-    # them again for its own sake; this is the one that saves the call.
-    if (photo.size or 0) > label_reader.MAX_BYTES:
-        return _detail(
-            request, db, cfg, row,
-            error="That photo is too big — try again, or type it in.", status=400,
-        )
-    if photo.content_type not in label_reader.ALLOWED_TYPES:
-        return _detail(
-            request, db, cfg, row,
-            error="That isn't a photo. Pick an image, or type it in.", status=400,
-        )
     try:
-        image = await photo.read()
-        # A few seconds on the wire, and this is the one blocking call in the
-        # app — off the event loop so the rest of the page-serving carries on.
-        found = await run_in_threadpool(
-            label_reader.read_label, image, photo.content_type or "", cfg.anthropic_key
-        )
+        found = await _read_label(photo, cfg)
     except label_reader.LabelUnreadable as exc:
         return _detail(request, db, cfg, row, error=str(exc), status=400)
-    finally:
-        await photo.close()
-    return _detail(
-        request, db, cfg, row,
-        prefill={k: v for k, v in found.model_dump().items() if v is not None},
-    )
+    return _detail(request, db, cfg, row, prefill=found)
 
 
 def _list_is_settled(row) -> str | None:

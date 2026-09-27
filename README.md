@@ -41,15 +41,24 @@ the same bottle turned up at more than one evening — what it scored each time.
 Ch. Musar 2005 is the example to look at: 92.3 at its own evening in 2020, 85.0
 in January 2014, and 65.8 in 2013.
 
-**Events** is the diary: an evening to come — a tasting, a blind tasting, an
-away trip or something else entirely — with the bottles lined up for it. Once it
-has been held, one button moves it into the archive, and its wines land in the
-cellar ready to be scored. A blind evening keeps its bottles' names in the
-database all along and simply refuses to print them until then.
+**Events** is the diary: an evening to come — a tasting, a blind tasting, a
+bring-your-own, an away trip or something else entirely — with the bottles lined
+up for it. Once it has been held, one button moves it into the archive, and its
+wines land in the cellar ready to be scored. A blind evening keeps its bottles'
+names in the database all along and simply refuses to print them until then.
+
+**Bring your own** is the club's other blind evening and the opposite shape:
+nine members turn up with nine bottles nobody knows in advance, so there is
+nothing to register beforehand. The bottles go in *called* Wine 1, Wine 2, and
+each is renamed as it is revealed during the evening — which is what the camera
+on the Edit form is for. Nothing is hidden, because the name is the state.
+Closing an evening with placeholders still on it is allowed, and said out loud
+first: they would go into the cellar called Wine 3.
 
 Registering eight bottles on a phone is eight long names to type, so where an
-`ANTHROPIC_API_KEY` is set the "Add a bottle" panel offers to **photograph the
-label** instead: the photo is read by Claude and the form comes back filled in,
+`ANTHROPIC_API_KEY` is set the "Add a bottle" panel — and every bottle's Edit
+form, which is where a BYO reveal happens — offers to **photograph the label**
+instead: the photo is read by Claude and the form comes back filled in,
 for a person to check and press Add. It writes nothing by itself — a vision
 model reading a decorative label can be confidently wrong, and anything the
 label doesn't say comes back blank rather than guessed. The photo is sent, read
@@ -57,13 +66,34 @@ and dropped; it is never saved or logged, and it costs roughly a tenth of a
 krone a bottle. Without the key the control isn't shown and bottles are typed
 in, which is the path that cannot fail.
 
-**To try any of that out** without it landing in the cellar, run
-`python scripts/sandbox.py`. It copies the database to `data/sandbox.sqlite3`
-and serves the app from the copy on port 8001, so you can register an evening,
-score it and press Close with the real database untouched — which matters,
-because Close is the one button in the app that does not come back. Each run
-starts from a fresh copy; `--keep` carries on with the last one. When you are
-done, delete the file.
+**Label pictures** come from Vinmonopolet, which the club buys from anyway.
+Their product search and their image server are both open — no key, no plan —
+so `python scripts/match_vinmonopolet.py --dry-run` asks the catalogue about
+each bottle and stores the product number of the ones it is sure about. A
+picture then shows on a wine's page, in the cellar listing and beside each wine
+while an evening is being scored. It is sure about roughly two bottles in five:
+the misses are wines Polet no longer sells, and it would rather find nothing
+than hang the wrong grower's label on a bottle. Their vintage is whatever they
+are selling now, not the year the club drank.
+
+**Running it** is one command either way, and which database it serves has to
+be said out loud — there is no default, because the two look identical from the
+outside:
+
+```bash
+python scripts/serve.py --live                      # the club's archive, :8000
+python scripts/serve.py --sandbox                   # a throwaway copy, :8001
+python scripts/serve.py --sandbox --port 8000 --keep --behind-cloudflare
+```
+
+A sandbox is copied from the live database through sqlite (not `cp` — the
+database is in WAL mode and a file copy can be a copy of the past), so you can
+register an evening, score it and press Close with the real one untouched —
+which matters, because Close is the one button in the app that does not come
+back. Each run starts fresh; `--keep` carries on with the last copy.
+`--behind-cloudflare` is for serving a sandbox through the tunnel, where Access
+should stay on. Every page of a sandbox carries a **Test data** strip, and that
+follows the file rather than the flag, so it cannot be left on by mistake.
 
 **Signing in** is one club password, then you pick your name. That is honestly
 all it is: anyone with the password can pick any name, which is fine for nine

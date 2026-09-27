@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -62,6 +63,16 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         same_site="lax",
     )
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
+
+    # The club's own label photographs, which beat Vinmonopolet's because they
+    # are the actual bottle at the actual vintage. They live under `data/`,
+    # gitignored like every other picture of the club's, so nothing here can
+    # reach either repository. Nothing writes here yet — the camera still drops
+    # its photograph after reading it — but `wines.label_photo` and the
+    # precedence in `label_url` are in place for when it stops.
+    labels = Path(cfg.db_path).parent / "labels"
+    labels.mkdir(parents=True, exist_ok=True)
+    app.mount("/labels", StaticFiles(directory=str(labels)), name="labels")
 
     @app.exception_handler(LoginRequired)
     async def _login_required(request: Request, exc: LoginRequired):

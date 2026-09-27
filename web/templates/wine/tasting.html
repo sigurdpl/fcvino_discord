@@ -19,7 +19,12 @@
     {% for w in wines %}
       <tr>
         <td class="num faint">{{ loop.index }}</td>
-        <td><a href="/wine/{{ w['id'] }}">{{ w['name'] }}</a></td>
+        <td>
+          {%- set label = label_url(w, 96) %}
+          {% if label %}<img class="thumb" src="{{ label }}" alt="" loading="lazy"
+               onerror="this.style.display='none'">{% endif %}
+          <a href="/wine/{{ w['id'] }}">{{ w['name'] }}</a>
+        </td>
         <td class="muted">
           {%- set bits = [w['region'], w['country']] | select | list -%}
           {{ bits | join(', ') }}{% if w['grape'] %} · {{ w['grape'] }}{% endif %}

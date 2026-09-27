@@ -2,6 +2,41 @@
 {% block title %}{{ event['theme'] }} · FC Vino{% endblock %}
 {% block body %}
 
+{#- The label reader. One above the add-a-bottle form, and one inside every
+    bottle's edit panel — that second one is what a BYO evening is for: the
+    wine is revealed, somebody points a phone at it, and the placeholder gets
+    its real name. Same markup every time; the script at the foot wires each
+    copy on its own, so twelve of them on a page do not fight over one camera. -#}
+{% macro still_unnamed(n) %}
+      <p class="muted small">
+        {{ n }} of the bottles {{ 'is' if n == 1 else 'are' }} still called Wine N.
+        Photograph the label{{ '' if n == 1 else 's' }} and save
+        {{ 'it' if n == 1 else 'them' }} first, or
+        {{ 'it goes' if n == 1 else 'they go' }} into the cellar that way.
+      </p>
+{% endmacro %}
+
+{% macro label_reader(action, note) %}
+    <form method="post" action="{{ action }}"
+          enctype="multipart/form-data" class="shot">
+      <label>Photograph the label
+        <input type="file" name="photo" accept="image/*" capture="environment" required>
+      </label>
+      {#- The file input opens the camera app on a phone and a file browser on a
+          laptop, which is no use when the bottle is in your hand. This takes
+          the picture here — and then hands the result to that same input, so
+          the reading goes through exactly one path. -#}
+      <button type="button" class="quiet open-camera" hidden>Use the camera</button>
+      <button type="submit">Read the label</button>
+      <div class="viewfinder" hidden>
+        <video class="preview" playsinline muted></video>
+        <button type="button" class="snap">Capture</button>
+        <button type="button" class="quiet close-camera">Cancel</button>
+      </div>
+      <p class="muted small">{{ note }}</p>
+    </form>
+{% endmacro %}
+
 <section class="card">
   <p class="crumb"><a href="/events">← the diary</a></p>
   <h1>
@@ -46,7 +81,7 @@
         <label>Where
           <input name="location" value="{{ event['location'] or '' }}">
         </label>
-        <label data-for="tasting blind other">Responsible
+        <label data-for="tasting blind byo other">Responsible
           <select name="host">
             <option value="">— nobody yet —</option>
             {% for m in members or [] %}
@@ -137,16 +172,25 @@
         {#- Its own row, because the form wants the full width. The drag moves
             it with its bottle — `data-follows` is how it knows which. -#}
         {% if not hidden %}
-        <tr id="edit-{{ w['id'] }}" data-follows="{{ w['id'] }}" hidden>
+        {#- A label just read for *this* bottle wins over what is stored, so the
+            reveal is one photograph and one Save. For every other row `p` is
+            empty and the boxes hold what the cellar holds. -#}
+        {% set p = prefill if editing == w['id'] else {} %}
+        <tr id="edit-{{ w['id'] }}" data-follows="{{ w['id'] }}"
+            {{ 'hidden' if editing != w['id'] }}>
           <td colspan="{{ 7 if not settled else 6 }}">
+            {% if label_reading %}
+            {% set note = "Read into the boxes below — check it, then save the bottle." %}
+            {{ label_reader("/events/" ~ event['id'] ~ "/wines/" ~ w['id'] ~ "/label", note) }}
+            {% endif %}
             <form method="post" action="/events/{{ event['id'] }}/wines/{{ w['id'] }}">
               <div class="grid">
-                <label>Wine <input name="name" value="{{ w['name'] }}" required></label>
-                <label>Producer <input name="producer" value="{{ w['producer'] or '' }}"></label>
-                <label>Vintage <input name="vintage" inputmode="numeric" value="{{ w['vintage'] or '' }}"></label>
-                <label>Country <input name="country" value="{{ w['country'] or '' }}"></label>
-                <label>Region <input name="region" value="{{ w['region'] or '' }}"></label>
-                <label>Grape <input name="grape" value="{{ w['grape'] or '' }}"></label>
+                <label>Wine <input name="name" value="{{ p.get('name', w['name']) }}" required></label>
+                <label>Producer <input name="producer" value="{{ p.get('producer', w['producer'] or '') }}"></label>
+                <label>Vintage <input name="vintage" inputmode="numeric" value="{{ p.get('vintage', w['vintage'] or '') }}"></label>
+                <label>Country <input name="country" value="{{ p.get('country', w['country'] or '') }}"></label>
+                <label>Region <input name="region" value="{{ p.get('region', w['region'] or '') }}"></label>
+                <label>Grape <input name="grape" value="{{ p.get('grape', w['grape'] or '') }}"></label>
                 <label>Price (kr) <input name="price_nok" inputmode="numeric" value="{{ w['price_nok'] or '' }}"></label>
                 <label>Brought by
                   <select name="brought_by">
@@ -158,6 +202,9 @@
                 </label>
               </div>
               <button type="submit">Save this bottle</button>
+              {#- A phone has no Escape key. `type` matters: a bare button
+                  inside a form submits it. -#}
+              <button type="button" class="quiet" data-shuts hidden>Cancel</button>
             </form>
           </td>
         </tr>
@@ -185,34 +232,15 @@
 
   {#- The cellar's own fields, so a bottle needs describing once and not twice
       when the evening moves into the archive. Only the name is required. -#}
-  <details class="filters" {{ 'open' if error or prefill }}>
+  <details class="filters" {{ 'open' if error or (prefill and not editing) }}>
     <summary>Add a bottle</summary>
 
     {#- Its own form, above the real one: it fills the boxes below in and writes
         nothing. Shown only where a key is configured; without one the bottle is
         typed in, which is the path that cannot fail. -#}
     {% if label_reading %}
-    <form method="post" action="/events/{{ event['id'] }}/wines/label"
-          enctype="multipart/form-data" class="shot">
-      <label>Photograph the label
-        <input type="file" name="photo" accept="image/*" capture="environment" required>
-      </label>
-      {#- The file input opens the camera app on a phone and a file browser on a
-          laptop, which is no use when the bottle is in your hand. This takes
-          the picture here — and then hands the result to that same input, so
-          the reading goes through exactly one path. -#}
-      <button type="button" class="quiet" id="open-camera" hidden>Use the camera</button>
-      <button type="submit">Read the label</button>
-      <div id="viewfinder" hidden>
-        <video id="preview" playsinline muted></video>
-        <button type="button" id="snap">Capture</button>
-        <button type="button" class="quiet" id="close-camera">Cancel</button>
-      </div>
-      <p class="muted small">
-        The photo is sent to be read and then dropped — check what comes back
-        before you add it.
-      </p>
-    </form>
+    {% set note = "The photo is sent to be read and then dropped — check what comes back before you add it." %}
+    {{ label_reader("/events/" ~ event['id'] ~ "/wines/label", note) }}
     {% endif %}
 
     <form method="post" action="/events/{{ event['id'] }}/wines">
@@ -234,6 +262,7 @@
         </label>
       </div>
       <button type="submit">Add</button>
+      <button type="button" class="quiet" data-shuts hidden>Cancel</button>
     </form>
   </details>
 </section>
@@ -254,9 +283,13 @@
       phone. Nothing reaches the cellar until you close the evening.
     </p>
     <p><a class="fv-btn" href="/events/{{ event['id'] }}/vote">Open the scoring page →</a></p>
+    {#- A bottle nobody got round to naming goes into the cellar as "Wine 3",
+        where it means nothing. Not refused — the reveal is the club's business
+        and not the app's — but said, in the sentence and on the button. -#}
+    {% if unnamed %}{{ still_unnamed(unnamed) }}{% endif %}
     <form method="post" action="/events/{{ event['id'] }}/close">
       <button type="submit"
-              onclick="return confirm('Close {{ event['theme'] }}? Its bottles and every score go into the cellar.')">Close event</button>
+              onclick="return confirm('Close {{ event['theme'] }}? Its bottles and every score go into the cellar.{% if unnamed %} {{ unnamed }} of them {{ 'is' if unnamed == 1 else 'are' }} still called Wine N.{% endif %}')">Close event</button>
     </form>
   {% else %}
     <h2>The evening</h2>
@@ -323,6 +356,7 @@
       {%- endif -%}
     </p>
     {% if not event['started_at'] %}
+    {% if unnamed %}{{ still_unnamed(unnamed) }}{% endif %}
     <form method="post" action="/events/{{ event['id'] }}/close">
       <button type="submit">Move to the archive</button>
     </form>
@@ -343,55 +377,69 @@
     JPEG on the way, which keeps both the upload and the reading cheap. -#}
 <script>
   (function () {
-    var open = document.getElementById('open-camera');
-    if (!open || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
 
-    var box = document.getElementById('viewfinder');
-    var video = document.getElementById('preview');
-    var file = document.querySelector('.shot input[type=file]');
-    var stream = null;
-    open.hidden = false;
+    // One reader above the add form and one inside every bottle's edit panel,
+    // each wired to its own controls. Nothing is shared but the camera itself,
+    // and opening one shuts the others so only a single light is ever on.
+    var readers = [];
 
-    function stop() {
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      stream = null;
-      box.hidden = true;
+    document.querySelectorAll('form.shot').forEach(function (form) {
+      var open = form.querySelector('.open-camera');
+      var box = form.querySelector('.viewfinder');
+      var video = form.querySelector('.preview');
+      var file = form.querySelector('input[type=file]');
+      if (!open || !box || !video || !file) return;
+
+      var stream = null;
       open.hidden = false;
-    }
 
-    open.addEventListener('click', function () {
-      navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }
-      }).then(function (got) {
-        stream = got;
-        video.srcObject = got;
-        video.play();
-        box.hidden = false;
-        open.hidden = true;
-      }).catch(function () {
-        // Declined, or no camera. Say so once and get out of the way rather
-        // than leaving a button that does nothing.
-        open.disabled = true;
-        open.textContent = 'No camera available — pick a photo instead';
+      function stop() {
+        if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+        box.hidden = true;
+        open.hidden = false;
+      }
+      readers.push(stop);
+
+      open.addEventListener('click', function () {
+        readers.forEach(function (other) { if (other !== stop) other(); });
+        navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }
+        }).then(function (got) {
+          stream = got;
+          video.srcObject = got;
+          video.play();
+          box.hidden = false;
+          open.hidden = true;
+        }).catch(function () {
+          // Declined, or no camera. Say so once and get out of the way rather
+          // than leaving a button that does nothing.
+          open.disabled = true;
+          open.textContent = 'No camera available — pick a photo instead';
+        });
+      });
+
+      form.querySelector('.close-camera').addEventListener('click', stop);
+
+      form.querySelector('.snap').addEventListener('click', function () {
+        var scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(function (blob) {
+          var carrier = new DataTransfer();
+          carrier.items.add(new File([blob], 'label.jpg', { type: 'image/jpeg' }));
+          file.files = carrier.files;
+          stop();
+          form.requestSubmit();
+        }, 'image/jpeg', 0.85);
       });
     });
 
-    document.getElementById('close-camera').addEventListener('click', stop);
-
-    document.getElementById('snap').addEventListener('click', function () {
-      var scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
-      var canvas = document.createElement('canvas');
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(function (blob) {
-        var carrier = new DataTransfer();
-        carrier.items.add(new File([blob], 'label.jpg', { type: 'image/jpeg' }));
-        file.files = carrier.files;
-        stop();
-        file.form.requestSubmit();
-      }, 'image/jpeg', 0.85);
-    });
+    // For the Escape handler below, which knows nothing about any of this.
+    window.fvStopCameras = function () { readers.forEach(function (stop) { stop(); }); };
   })();
 </script>
 
@@ -408,9 +456,18 @@
       document.querySelectorAll('details.filters[open]').forEach(function (panel) {
         panel.open = false;
       });
-      var camera = document.getElementById('close-camera');
-      if (camera && !document.getElementById('viewfinder').hidden) camera.click();
+      if (window.fvStopCameras) window.fvStopCameras();
     }
+
+    {#- Escape is a keyboard's way out and the club does this standing in
+        somebody's kitchen, so there is a visible one too. Rendered hidden and
+        revealed here, the way the camera button is: without this script it
+        would be a control that does nothing, and the ▲▼ buttons on this page
+        go to some trouble not to be that. -#}
+    document.querySelectorAll('[data-shuts]').forEach(function (button) {
+      button.hidden = false;
+      button.addEventListener('click', shut);
+    });
 
     document.querySelectorAll('[data-edits]').forEach(function (button) {
       button.addEventListener('click', function () {

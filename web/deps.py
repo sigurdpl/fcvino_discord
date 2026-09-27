@@ -103,6 +103,31 @@ def fmt_span(starts: str | None, ends: str | None = None,
     return f"{a.day} {a:%B} {a.year} – {b.day} {b:%B} {b.year}"
 
 
+def label_url(wine, size: int = 96) -> str:
+    """A picture of the bottle, or "" when there is none.
+
+    The club's own photograph first — it is the actual bottle at the actual
+    vintage, which nothing bought in can be — then Vinmonopolet's, which is
+    whatever year they are selling. A wine with neither renders nothing at all
+    rather than a broken frame, the way the club's own photographs already do
+    on the home page.
+    """
+    # Two shapes reach this: a sqlite3.Row on a wine's own page, and the
+    # search index's Row — a NamedTuple — in the cellar listing.
+    def field(name: str):
+        if hasattr(wine, name):
+            return getattr(wine, name)
+        return wine[name] if name in wine.keys() else None
+
+    photo = field("label_photo")
+    if photo:
+        return f"/labels/{photo}"
+    code = field("vmp_code")
+    if code:
+        return f"https://bilder.vinmonopolet.no/cache/{size}x{size}-0/{code}-1.jpg"
+    return ""
+
+
 # Where the club is. Every evening is held here, so the diary says nothing
 # about it and only names a country when there is something to say.
 HOME_COUNTRY = "Norway"
@@ -164,6 +189,7 @@ templates.env.globals["fmt_local_input"] = fmt_local_input
 templates.env.globals["initials"] = initials
 templates.env.globals["avatar_colour"] = colour
 templates.env.globals["static"] = static_url
+templates.env.globals["label_url"] = label_url
 
 
 class LoginRequired(Exception):
@@ -231,6 +257,10 @@ def page(request: Request, template: str, *, status_code: int = 200, **context):
     # everywhere, the way a group's member count does.
     context.setdefault("members", _members(request))
     context.setdefault("totals", _totals(request))
+    # Every page, because a strip that appears on some pages and not others is
+    # worse than none: it teaches people to stop looking for it.
+    cfg = getattr(request.app.state, "cfg", None)
+    context.setdefault("sandbox", bool(cfg and cfg.sandbox))
     return templates.TemplateResponse(
         request,
         template,

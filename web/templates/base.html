@@ -10,6 +10,15 @@
   <script src="{{ static('htmx.min.js') }}" defer></script>
 </head>
 <body>
+{#- Shown whenever the database being served is not the club's own archive.
+    Not a flag anyone has to set or remember to unset: it follows the file, so
+    the day the site goes back to production it takes itself down. -#}
+{% if sandbox %}
+<div class="sandbox-strip" role="status">
+  <strong>Test data</strong> — nothing here is the club's real archive, and
+  nothing entered here survives.
+</div>
+{% endif %}
 
 {% set path = request.url.path %}
 {% set on_cellar = path == '/wine' or (path.startswith('/wine/') and '/boards' not in path and '/tastings' not in path) %}

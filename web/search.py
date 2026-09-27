@@ -59,6 +59,10 @@ class Row(NamedTuple):
     # Who gave it what. The average is nine opinions flattened into one number;
     # this is the nine, which is what "does Tore actually like this" needs.
     scores: Mapping[str, int] = NO_SCORES
+    # Where a picture of the bottle comes from: the club's own photograph, or
+    # Vinmonopolet's product number. Rendered by `web.deps.label_url`.
+    vmp_code: str | None = None
+    label_photo: str | None = None
 
 
 class Hit(NamedTuple):

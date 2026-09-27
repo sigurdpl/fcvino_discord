@@ -16,7 +16,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # People who turned up to an evening without ever joining. Their scores count
 # towards the bottles they rated; they do not count towards the club.
@@ -98,12 +98,20 @@ CREATE INDEX IF NOT EXISTS idx_tastings_when ON tastings(year, month);
 --   tasting  an ordinary evening, bottles named on the page
 --   blind    the same, but the bottles show as Wine 1, Wine 2 until it is
 --            archived — the names live here throughout, only the page hides them
+--   byo      bring your own: nine members, nine bottles, nobody knows them in
+--            advance. The bottles go in *called* Wine 1, Wine 2 and are renamed
+--            one at a time as they are revealed, so nothing here is hidden —
+--            the name is the state, and it is the club's to change all evening
 --   trip     an away trip, which runs over days and ends up in `trips`
 --   other    whatever else the club decides to do; `notes` is its description
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Only a database created from this schema carries the check: `kind`
+    -- arrived in the existing ones as a plain ALTER TABLE ADD COLUMN, so they
+    -- enforce nothing. The route's `kind not in KINDS` is what actually does
+    -- the work; this is here so a fresh database agrees with a migrated one.
     kind       TEXT    NOT NULL DEFAULT 'tasting'
-               CHECK (kind IN ('tasting', 'blind', 'trip', 'other')),
+               CHECK (kind IN ('tasting', 'blind', 'byo', 'trip', 'other')),
     theme      TEXT    NOT NULL,
     location   TEXT,
     host       TEXT,
@@ -333,6 +341,7 @@ class Database:
         self._migrate_wine_member_guest()
         self._migrate_event_kind()
         self._migrate_event_started()
+        self._migrate_wine_label()
         self._migrate_wine_columns()
         self._migrate_wine_ratings_members()
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -409,6 +418,29 @@ class Database:
             conn.execute("ALTER TABLE events ADD COLUMN started_at TEXT")
             conn.commit()
             log.info("added events.started_at")
+
+    def _migrate_wine_label(self) -> None:
+        """Add where a bottle's picture comes from.
+
+        `vmp_code` is Vinmonopolet's product number, which is all that is
+        needed: their image URL is built from it, so storing the URL as well
+        would be two things to keep in step. `label_photo` is the club's own
+        photograph, which beats theirs — it is the actual bottle, at the
+        actual vintage.
+        """
+        conn = self._conn
+        assert conn is not None
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(wines)")}
+        if not columns:
+            return
+        for column, ddl in (
+            ("vmp_code", "ALTER TABLE wines ADD COLUMN vmp_code TEXT"),
+            ("label_photo", "ALTER TABLE wines ADD COLUMN label_photo TEXT"),
+        ):
+            if column not in columns:
+                conn.execute(ddl)
+                conn.commit()
+                log.info("added wines.%s", column)
 
     def _migrate_wine_columns(self) -> None:
         """Add wines.tasting_id and wines.brought_by where they're missing."""
