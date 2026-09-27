@@ -3,11 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#1b2a42">
+  {#- The colour the phone paints around the page: Android's status bar, and
+      iOS's when this is run from the home screen. It said #1b2a42 — the navy
+      from the palette before this one — so it has been drawing a blue edge
+      around a near-black page. -#}
+  <meta name="theme-color" content="#0a0b0a">
   <title>{% block title %}FC Vino{% endblock %}</title>
   <link rel="stylesheet" href="{{ static('style_dark2.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🍷</text></svg>">
+
+  {#- Add to Home Screen, which is as much of an app as nine people need: an
+      icon, a full screen, and a session that outlives a browser tab.
+
+      `use-credentials` is load-bearing. Cloudflare Access sits in front of
+      this site, and without it the browser fetches the manifest with no
+      cookies, is handed Access's login page instead of JSON, and declines to
+      install — saying nothing about why. -#}
+  <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+  {#- iOS ignores the manifest's icons and reads this one. Linked only where it
+      exists: the club's pictures are not in the repository, and a link to a
+      missing icon has iOS quietly screenshot the page instead. -#}
+  {% if apple_icon %}<link rel="apple-touch-icon" href="{{ static(apple_icon) }}">{% endif %}
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FC Vino">
+  {#- `black`, not `black-translucent`: iOS then keeps the status bar out of
+      the layout, so nothing has to be padded away from the clock. -#}
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
   <script src="{{ static('htmx.min.js') }}" defer></script>
+  <script>
+    // Registered from the root, which is the only scope that covers the site.
+    // Its whole job is the offline page; it caches nothing that changes.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {
+          // An unregistered worker costs nothing but the offline page.
+        });
+      });
+    }
+  </script>
 </head>
 <body>
 {#- Shown whenever the database being served is not the club's own archive.

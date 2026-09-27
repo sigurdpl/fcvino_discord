@@ -8,6 +8,7 @@ schema has to show up here as a failure.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -635,6 +636,144 @@ def test_the_masthead_says_its_name_without_the_logo_file(signed_in):
     """
     page = signed_in.get("/wine").text
     assert re.search(r'class="brand"[^>]*>\s*<img [^>]*alt="FC Vino"', page)
+
+
+# -- installable: an icon on the home screen --------------------------------
+#
+# Add to Home Screen is as close to an app as nine people need. Everything
+# about it fails *silently* in a browser — a manifest served as the wrong type,
+# an icon that 404s, a worker out of scope — so it is all asserted here.
+
+
+def manifest_of(client):
+    response = client.get("/manifest.webmanifest")
+    assert response.status_code == 200
+    return response
+
+
+def test_the_manifest_says_what_an_installable_app_needs(signed_in):
+    response = manifest_of(signed_in)
+    assert response.headers["content-type"].startswith("application/manifest+json"), \
+        "served as anything else and every browser ignores it without comment"
+    found = response.json()
+    assert found["name"] == "FC Vino"
+    assert found["start_url"] == "/"
+    assert found["display"] == "standalone", "or it opens in a browser with an icon"
+    assert found["theme_color"] == found["background_color"]
+
+
+def test_every_icon_the_manifest_names_is_actually_served(signed_in):
+    """The silent failure. A manifest pointing at a file that is not there
+    leaves Android simply declining to install, with nothing said anywhere."""
+    icons = manifest_of(signed_in).json()["icons"]
+    assert icons, "an app with no icon cannot be installed"
+    for icon in icons:
+        served = signed_in.get(icon["src"])
+        assert served.status_code == 200, f"{icon['src']} is named but not served"
+        assert served.headers["content-type"] == "image/png"
+
+    sizes = {i["sizes"] for i in icons}
+    assert {"192x192", "512x512"} <= sizes, "the two Android asks for"
+    assert any(i.get("purpose") == "maskable" for i in icons), \
+        "or a launcher that crops to a circle cuts the wordmark's ends off"
+
+
+def test_a_checkout_without_the_clubs_pictures_names_no_icon(signed_in, tmp_path,
+                                                             monkeypatch):
+    """The icons are made from the wordmark, and the club's pictures are kept
+    out of the public repository — so a fresh checkout, and the Pi on the day
+    it is set up, will not have them. Naming an icon that is not there is the
+    one outcome worth avoiding: Android declines to install and says nothing."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "STATIC", tmp_path)
+    assert manifest_of(signed_in).json()["icons"] == []
+    assert sorted(installable.missing_icons()) == [
+        "icon-180.png", "icon-192.png", "icon-512.png"]
+
+    page = signed_in.get("/wine").text
+    assert "apple-touch-icon" not in page, \
+        "iOS screenshots the page when the icon 404s, which looks like a bug"
+
+
+def test_a_missing_icon_is_said_out_loud_at_startup(cellar, tmp_path, monkeypatch, caplog):
+    """Because the alternative is a site that simply never installs, with
+    nothing in any log or any browser to say why."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "STATIC", tmp_path)
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "pi.sqlite3", web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one", football_token=None,
+        access_trusted=False, access_members={},
+    )
+    with caplog.at_level(logging.WARNING, logger="web.app"), TestClient(create_app(cfg)):
+        pass
+    assert "will not install on a phone" in caplog.text
+    assert "icon-512.png" in caplog.text
+
+
+def test_the_page_links_the_manifest_with_credentials(signed_in):
+    """Cloudflare Access sits in front of this site. A manifest fetched without
+    cookies is answered with Access's login page, and the install is refused
+    with nothing said about why — so the attribute is the whole feature."""
+    page = signed_in.get("/wine").text
+    link = re.search(r"<link[^>]*rel=\"manifest\"[^>]*>", page)
+    assert link, "no manifest linked"
+    assert 'crossorigin="use-credentials"' in link.group(0)
+    assert 'href="/manifest.webmanifest"' in link.group(0)
+
+
+def test_the_page_carries_what_ios_reads(signed_in):
+    """iOS ignores the manifest's icons and display mode and reads these."""
+    page = signed_in.get("/wine").text
+    assert re.search(r'rel="apple-touch-icon" href="/static/icon-180\.png', page), \
+        "this checkout has the club's pictures, so it should be linked"
+    assert '<meta name="apple-mobile-web-app-capable" content="yes">' in page
+    assert '<meta name="apple-mobile-web-app-title" content="FC Vino">' in page
+
+
+def test_the_theme_colour_matches_the_page(signed_in):
+    """It is the colour the phone paints around the page. It said #1b2a42 —
+    the navy from the palette before this one — against a near-black page."""
+    page = signed_in.get("/wine").text
+    found = re.search(r'<meta name="theme-color" content="([^"]+)">', page)
+    assert found and found.group(1) == "#0a0b0a"
+
+    from web.deps import WEB_ROOT
+    sheet = (WEB_ROOT / "static" / "style_dark2.css").read_text()
+    assert re.search(r"--page:\s*#0a0b0a", sheet), "and it follows the stylesheet"
+
+
+def test_the_worker_is_served_from_the_root(signed_in):
+    """Scope. A worker controls its own directory and below, so the same file
+    under /static would install without complaint and control nothing."""
+    response = signed_in.get("/sw.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert "addEventListener('fetch'" in response.text, \
+        "Android wants a fetch handler before it calls this installable"
+    assert signed_in.get("/wine").text.count("register('/sw.js')") == 1
+
+
+def test_the_worker_caches_nothing_that_changes(signed_in):
+    """The failure mode of most service workers is serving last week's page in
+    the middle of an evening, with no sign it has happened."""
+    worker = signed_in.get("/sw.js").text
+    cached = re.findall(r"cache\.add\w*\(([^)]*)\)", worker)
+    assert cached == ["OFFLINE"], f"it caches more than the offline page: {cached}"
+
+
+def test_the_offline_page_needs_nothing_to_render(client, cellar):
+    """It is shown when nothing can be reached, so it must not want a login, a
+    database row or a stylesheet — every one of those would be a hole in the
+    one page that cannot have any."""
+    response = client.get("/offline")
+    assert response.status_code == 200, "and it is not behind the login"
+    assert "isn&#39;t answering" in response.text or "isn't answering" in response.text
+    assert "<link" not in response.text, "nothing to fetch"
+    assert "/static/" not in response.text
 
 
 def test_the_stylesheet_url_is_stamped_with_the_files_version(signed_in):
