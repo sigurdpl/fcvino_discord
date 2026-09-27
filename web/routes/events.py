@@ -170,11 +170,20 @@ def _listing(request: Request, db: Db, *, error: str | None = None, status: int 
     """The page itself. Shared so a rejected form comes back with its own page."""
     now = utcnow_iso()
     rows = queries.events(db)
+    # Three lists, not two, because "past" was doing the work of two ideas and
+    # getting both wrong: an evening held last night is not history until
+    # somebody files it, and one that starts at half past eight is not history
+    # at twenty to nine. `queries.is_over` is the rule; the clock only decides
+    # which of the two open lists an unfiled evening belongs in.
+    open_ones = [e for e in rows if not queries.is_over(e)]
     return page(
         request,
         "events/index.html",
-        upcoming=[e for e in rows if e["starts_at"] >= now],
-        past=[e for e in reversed(rows) if e["starts_at"] < now],
+        upcoming=[e for e in open_ones if e["starts_at"] >= now],
+        # Newest first in both of the backward-looking lists: the evening you
+        # want to close is almost always the one you have just had.
+        to_close=[e for e in reversed(open_ones) if e["starts_at"] < now],
+        past=[e for e in reversed(rows) if queries.is_over(e)],
         kinds=KINDS,
         error=error,
         status_code=status,

@@ -1045,6 +1045,14 @@ def test_a_guest_cannot_be_claimed_as_your_name(signed_in, cellar):
 # -- the home page's upcoming panel -----------------------------------------
 
 
+def upcoming_panel(page):
+    """The home page's diary panel alone.
+
+    A closed evening reappears further down the page under Latest, so a test
+    about the diary has to say which list it means."""
+    return page.split("Upcoming")[1].split("</ul>")[0]
+
+
 def test_the_home_page_shows_what_is_coming_up(signed_in):
     make_event(signed_in, theme="Moden Piemonte")
     page = signed_in.get("/").text
@@ -1052,9 +1060,22 @@ def test_the_home_page_shows_what_is_coming_up(signed_in):
     assert "Moden Piemonte" in page
 
 
-def test_an_evening_already_held_is_not_upcoming(signed_in):
-    make_event(signed_in, when=GONE, theme="Long gone")
-    assert "Long gone" not in signed_in.get("/").text
+def test_an_evening_stays_on_the_front_page_until_it_is_closed(signed_in, cellar):
+    """This used to assert the opposite, and the opposite was the bug.
+
+    Filtering on the clock took tonight's evening off the front page at seven
+    o'clock on the night itself — the one hour of the year it is wanted most.
+    An evening leaves when somebody files it, not when its start time passes.
+    """
+    make_event(signed_in, when=GONE, theme="Held last night")
+    shown = upcoming_panel(signed_in.get("/").text)
+    assert "Held last night" in shown
+    assert "still to close" in shown, "and it says which it is, so it is not a mistake"
+
+    # Closed, it leaves the diary panel — and turns up under Latest instead,
+    # which is why this looks at the one panel rather than the whole page.
+    signed_in.post(f"/events/{latest(cellar)['id']}/close")
+    assert "Held last night" not in upcoming_panel(signed_in.get("/").text)
 
 
 def test_only_the_next_four_evenings_are_listed(signed_in):
@@ -1102,6 +1123,101 @@ def test_each_kind_can_be_registered(signed_in, cellar, kind):
 def test_an_unknown_kind_is_refused(signed_in, cellar):
     assert kinded(signed_in, "banquet").status_code == 400
     assert cellar.query("SELECT * FROM events") == []
+
+
+# -- the diary's three lists -------------------------------------------------
+#
+# An evening is over when somebody has filed it, not when the clock passes it.
+# Splitting on the clock put an evening into Been and gone twenty minutes after
+# it began, while the club was still pouring the first wine.
+
+
+def section(page, heading):
+    """One of the diary's sections, from its heading to the end of its table."""
+    assert heading in page, f"no {heading!r} section on the page"
+    return page.split(f"<h2>{heading}</h2>")[1].split("</table>")[0]
+
+
+def test_an_evening_whose_time_has_passed_is_not_history(signed_in, cellar):
+    """The bug as reported: 'blindest of all' started at half past eight and
+    was in Been and gone at ten to nine, never started, never closed."""
+    kinded(signed_in, "blind", theme="Blindest of all", starts_at=GONE)
+    page = signed_in.get("/events").text
+
+    assert "Blindest of all" in section(page, "Still to close")
+    assert "Blindest of all" not in section(page, "Coming up")
+    assert "Been and gone" not in page, "nothing is filed, so there is no history yet"
+
+
+def test_closing_it_is_what_moves_it(signed_in, cellar):
+    kinded(signed_in, "blind", theme="Blindest of all", starts_at=GONE)
+    signed_in.post(f"/events/{latest(cellar)['id']}/wines", data={"name": "Alfa"})
+    signed_in.post(f"/events/{latest(cellar)['id']}/close")
+
+    page = signed_in.get("/events").text
+    assert "Blindest of all" in section(page, "Been and gone")
+    assert "in the archive" in section(page, "Been and gone")
+    assert "Still to close" not in page
+
+
+def test_an_evening_being_scored_is_not_history_either(signed_in, cellar):
+    """The worst of the two: the scoring page is open, everybody is halfway
+    through their card, and the diary has already filed the evening away."""
+    kinded(signed_in, "tasting", theme="Being scored", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Alfa"})
+    signed_in.post(f"/events/{event_id}/start")
+
+    page = signed_in.get("/events").text
+    assert "Being scored" in section(page, "Still to close")
+    assert "Been and gone" not in page
+
+
+def test_something_still_to_come_is_only_in_coming_up(signed_in, cellar):
+    make_event(signed_in, theme="Next month")
+    page = signed_in.get("/events").text
+    assert "Next month" in section(page, "Coming up")
+    assert "Still to close" not in page
+
+
+def test_an_evening_appears_in_exactly_one_list(signed_in, cellar):
+    """Three lists built from one set of rows, so the way to get this wrong is
+    for a row to fall into two of them — or into none."""
+    make_event(signed_in, theme="Ahead")
+    kinded(signed_in, "blind", theme="Behind", starts_at=GONE)
+    kinded(signed_in, "other", theme="Julebord", starts_at=GONE)
+    page = signed_in.get("/events").text
+
+    table = page.split("Coming up")[1]
+    for theme in ("Ahead", "Behind", "Julebord"):
+        assert table.count(f">{theme}</a>") == 1, f"{theme} is listed twice, or not at all"
+
+
+def test_something_else_entirely_has_nothing_to_close(signed_in, cellar):
+    """`other` has no archive to go to, so for that one the clock is the only
+    rule there could be — it goes straight to Been and gone."""
+    kinded(signed_in, "other", theme="Julebord", starts_at=GONE)
+    page = signed_in.get("/events").text
+    assert "Julebord" in section(page, "Been and gone")
+    assert "Still to close" not in page
+
+
+def test_a_trip_runs_until_it_is_filed_too(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", country="Belgium", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    assert "Brugge" in section(signed_in.get("/events").text, "Still to close")
+
+    signed_in.post(f"/events/{event_id}/close")
+    assert "Brugge" in section(signed_in.get("/events").text, "Been and gone")
+
+
+def test_an_end_date_keeps_it_open_past_its_first_day(signed_in, cellar):
+    """A weekend away is not history on the Friday. `other` is the only kind
+    that falls back to the clock, so it is the only one that has to read the
+    end date — the others are held open by not having been filed."""
+    kinded(signed_in, "other", theme="Langhelg", starts_at=GONE,
+           ends_at="2099-03-08T18:00")
+    assert "Langhelg" in section(signed_in.get("/events").text, "Still to close")
 
 
 # -- blind: the bottles are not named until it is archived ------------------

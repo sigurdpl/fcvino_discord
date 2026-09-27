@@ -44,7 +44,9 @@ in January 2014, and 65.8 in 2013.
 **Events** is the diary: an evening to come — a tasting, a blind tasting, a
 bring-your-own, an away trip or something else entirely — with the bottles lined
 up for it. Once it has been held, one button moves it into the archive, and its
-wines land in the cellar ready to be scored. A blind evening keeps its bottles'
+wines land in the cellar ready to be scored. Until somebody presses it the
+evening sits under **Still to close** rather than in the history: an evening is
+over when it has been filed, not when the clock passes its start time. A blind evening keeps its bottles'
 names in the database all along and simply refuses to print them until then.
 
 A blind evening used to leave one person stuck: whoever was responsible had

@@ -82,7 +82,13 @@
         <span class="avatar sm">{{ {'trip': '✈️', 'other': '📅'}.get(e['kind'], '🍷') }}</span>
         <div>
           <div class="type">{{ fmt_span(e['starts_at'], e['ends_at']) }}</div>
-          <div class="name"><a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a></div>
+          <div class="name">
+            <a href="/events/{{ e['id'] }}">{{ e['theme'] }}</a>
+            {#- An evening stays here until somebody closes it, so one whose
+                day has passed is a nudge rather than a mistake — but only if
+                it says which it is. -#}
+            {% if e['starts_at'] < now %}<span class="pill">still to close</span>{% endif %}
+          </div>
           <div class="meta">
             {%- set where = fmt_where(e['location'], e['country']) -%}
             {%- if where != '—' %}{{ where }}{% endif -%}

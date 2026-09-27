@@ -252,6 +252,34 @@ def member_ratings(db: Database, member_id: int, limit: int = 100) -> list[sqlit
 # -- events -----------------------------------------------------------------
 
 
+# The kinds that end up in the cellar's archive rather than the trips'.
+# `bot/db.py` documents them; this is only about where a finished one lands.
+_ARCHIVED_AS_TASTING = ("tasting", "blind", "byo")
+
+
+def is_over(row) -> bool:
+    """Whether an event belongs to the club's history rather than its diary.
+
+    **Filed, not merely past.** Splitting the diary on the clock made an
+    evening history one minute after its start time — while the club was still
+    pouring the first wine, and while the scoring page was open. An evening is
+    over when somebody has closed it and its bottles have joined the cellar.
+
+    Something else entirely is the exception: `other` has no archive to go to,
+    so for that one the clock really is all there is. Its end date if it has
+    one, since a weekend away is not over on the Friday.
+
+    One function rather than this and a matching SQL `WHERE`: the diary and the
+    home page both ask the question, and two spellings of it would drift apart
+    without either page looking wrong on its own.
+    """
+    if row["kind"] in _ARCHIVED_AS_TASTING:
+        return bool(row["tasting_id"])
+    if row["kind"] == "trip":
+        return bool(row["trip_id"])
+    return (row["ends_at"] or row["starts_at"]) < utcnow_iso()
+
+
 def events(db: Database) -> list[sqlite3.Row]:
     """Every planned evening, soonest first, with its bottle count."""
     return db.query(
@@ -262,18 +290,22 @@ def events(db: Database) -> list[sqlite3.Row]:
 
 
 def upcoming_events(db: Database, limit: int = 4) -> list[sqlite3.Row]:
-    """The next few evenings, soonest first.
+    """The next few evenings, soonest first — and tonight's, all evening.
 
-    `utcnow_iso()` is already the shape `starts_at` is stored in, so the two
-    compare as text without parsing either.
+    Filtered in Python by `is_over` rather than by a date in the SQL, so the
+    front page and the diary answer with the same rule. It used to ask for
+    `starts_at >= now`, which took tonight's evening off the front page at
+    seven o'clock on the night itself.
+
+    An evening held and never closed therefore stays here. That is the point:
+    it is unfinished, and the button that finishes it is on its own page.
     """
-    return db.query(
+    rows = db.query(
         """SELECT e.*, COUNT(w.id) AS wines
            FROM events e LEFT JOIN event_wines w ON w.event_id = e.id
-           WHERE e.starts_at >= ?
-           GROUP BY e.id ORDER BY e.starts_at LIMIT ?""",
-        (utcnow_iso(), limit),
+           GROUP BY e.id ORDER BY e.starts_at"""
     )
+    return [e for e in rows if not is_over(e)][:limit]
 
 
 def event(db: Database, event_id: int) -> sqlite3.Row | None:
