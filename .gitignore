@@ -26,6 +26,9 @@ __pycache__/
 # them. A checkout without them is not broken: the stylesheet lays a gradient
 # under every photograph and the wordmark falls back to its own name, so the
 # page renders as the design without the photography.
+# The home-screen icons (icon-180/192/512.png) are made from the wordmark and
+# so are covered by this too. The site still runs without them — it just
+# cannot be installed on a phone, and says so in the log at startup.
 web/static/*.png
 web/static/*.jpg
 web/static/*.jpeg

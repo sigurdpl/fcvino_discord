@@ -361,6 +361,11 @@ button.quiet:hover { background: var(--line); }
    fields until this rule existed. */
 [hidden] { display: none !important; }
 
+/* Run from the home screen there is no browser toolbar at the foot of the
+   screen, so on an iPhone the home indicator sits over whatever is last on the
+   page. Zero in a browser, where the toolbar is already doing this. */
+body { padding-bottom: env(safe-area-inset-bottom, 0); }
+
 /* The camera sits above the bottle form, inside the same panel, so it needs a
    line to separate the thing that fills the boxes in from the boxes. */
 .shot {

@@ -101,11 +101,45 @@
 {% if pours %}
 {#- A blind evening keeps its bottles' names in the database throughout; this
     page simply does not print them until the evening is archived, which is
-    also when they land in the cellar. Nobody sees them before then, including
-    whoever registered them — that is what makes it blind rather than polite. -#}
-{% set hidden = event['kind'] == 'blind' and not event['tasting_id'] %}
+    also when they land in the cellar. `hidden` comes from the route, because
+    the same answer decides what is printed here and what two routes allow.
+
+    The one person that used to leave stuck was whoever registered the bottles,
+    who could not see their own lineup. They can ask — for this browser only,
+    and the page says so while they are looking. -#}
 <section class="card">
-  <h2>The wines{% if hidden %} <span class="pill">blind</span>{% endif %}</h2>
+  <h2>
+    The wines
+    {%- if hidden %} <span class="pill">blind</span>{% endif %}
+    {%- if revealed %} <span class="pill">revealed</span>{% endif %}
+  </h2>
+
+  {% if event['kind'] == 'blind' and not event['tasting_id'] %}
+    {% if may_reveal %}
+      <form method="post" action="/events/{{ event['id'] }}/reveal">
+        <button class="quiet" type="submit">
+          {{ 'Hide them again' if revealed else 'Reveal the bottles' }}
+        </button>
+        {% if revealed %}
+          <span class="muted small">
+            Only this phone sees the names — everyone else still has the
+            numbers. Hide them before you pass it round.
+          </span>
+        {% else %}
+          <span class="muted small">
+            You are responsible for this evening, so you can check what you
+            registered. Nobody else's page changes.
+          </span>
+        {% endif %}
+      </form>
+    {% elif not event['host'] %}
+      <p class="muted small">
+        Nobody is down as responsible yet. Name someone under
+        <em>Change the details</em> and they can check the lineup without
+        giving it away.
+      </p>
+    {% endif %}
+  {% endif %}
   <div class="scroll">
     <table class="rows">
       {#- `settled` is the same rule the routes enforce: once anyone is scoring,

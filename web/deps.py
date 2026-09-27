@@ -24,6 +24,19 @@ WEB_ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 
+def apple_icon() -> str | None:
+    """iOS's home-screen icon, or None where the club's pictures are absent.
+
+    Same reasoning as `static_url`'s: a checkout without the photographs is
+    normal and must not be broken. Linking an icon that is not there costs more
+    than linking none — iOS falls back to a screenshot of the page, which looks
+    like a bug rather than like a missing file.
+    """
+    from .routes.installable import APPLE_ICON, STATIC
+
+    return APPLE_ICON if (STATIC / APPLE_ICON).exists() else None
+
+
 def static_url(name: str) -> str:
     """`/static/<name>` with a version stamp taken from the file itself.
 
@@ -261,6 +274,8 @@ def page(request: Request, template: str, *, status_code: int = 200, **context):
     # worse than none: it teaches people to stop looking for it.
     cfg = getattr(request.app.state, "cfg", None)
     context.setdefault("sandbox", bool(cfg and cfg.sandbox))
+    # The home-screen icon, when this checkout has the club's pictures.
+    context.setdefault("apple_icon", apple_icon())
     return templates.TemplateResponse(
         request,
         template,

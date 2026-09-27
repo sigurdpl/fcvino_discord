@@ -1,0 +1,40 @@
+{#- Deliberately self-contained. The service worker caches this page and shows
+    it when nothing can be reached, so anything it linked to — the stylesheet,
+    the logo, a font — would be a gap on the one page that must not have any.
+    Hence the colours written out rather than taken from style_dark2.css. -#}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0b0a">
+  <title>Not reachable · FC Vino</title>
+  <style>
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 2rem 1.5rem;
+      background: #0a0b0a; color: #f5f1e8;
+      font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    h1 { margin: 0 0 .6rem; font-size: 1.35rem; letter-spacing: .01em; }
+    p { margin: 0 0 1.4rem; color: #b4aea4; line-height: 1.5; max-width: 26rem; }
+    .mark { color: #b5945a; font-size: 2.2rem; margin-bottom: .8rem; }
+    button {
+      font: inherit; color: #fff; background: #6f172b; border: 0;
+      border-radius: 10px; padding: .6rem 1.4rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark">🍷</div>
+    <h1>The cellar isn't answering</h1>
+    <p>
+      FC Vino is served from the club's own machine, so this page needs that
+      machine awake and this phone online. The archive itself is untouched —
+      though anything you had just typed will not have reached it.
+    </p>
+    <button onclick="location.reload()">Try again</button>
+  </main>
+</body>
+</html>

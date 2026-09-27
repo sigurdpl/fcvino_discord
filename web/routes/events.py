@@ -20,9 +20,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 
 from bot.db import parse_utc, utcnow_iso
+from bot.wine_origin import fold
 
 from .. import label as label_reader
 from .. import queries
+from ..auth import current_member
 from ..deps import Cfg, Db, LoggedIn, Member, fmt_day, page
 
 router = APIRouter(prefix="/events")
@@ -74,6 +76,54 @@ def _day_has_come(row, tz: ZoneInfo, now: datetime | None = None) -> bool:
     except (ValueError, TypeError):
         return True
     return day <= (now or datetime.now(tz)).astimezone(tz).date()
+
+
+# -- who may look at a blind evening's names --------------------------------
+#
+# A blind evening keeps its names in the database and declines to print them.
+# The one person that leaves stuck is the responsible: they registered the
+# bottles and cannot see what they registered. So they, and only they, can ask
+# for them back — for their own browser, never for anyone else's.
+#
+# What this is not is a lock. Without Cloudflare Access in front, signing in is
+# the club password and then picking your own name, so "you are the
+# responsible" stops an accidental tap and not a determined peek. What it does
+# guarantee is that the names never reach a browser that has not asked: the
+# page is rendered without them rather than hiding them with a stylesheet.
+
+REVEALED = "revealed"          # session key: the event ids this browser asked for
+
+
+def _blind(row) -> bool:
+    """Whether this evening is one whose names are withheld at all."""
+    return row["kind"] == "blind" and not row["tasting_id"]
+
+
+def _may_reveal(row, member) -> bool:
+    """Whether this person is the one who registered these bottles.
+
+    `events.host` is filled from a dropdown of member names, so the two are the
+    same string; folding them is insurance against a name being re-entered by
+    hand one day, and costs nothing.
+    """
+    if not member or not row["host"]:
+        return False
+    return fold(member[1]) == fold(row["host"])
+
+
+def _is_revealed(request: Request, row) -> bool:
+    """Whether this browser has asked to see the names, and may.
+
+    The permission is re-checked on every render rather than trusted from the
+    session, so a reveal does not outlive being the responsible — if the
+    evening is handed to somebody else, the old responsible's page goes blind
+    again on its next load.
+    """
+    if not _blind(row):
+        return False
+    if row["id"] not in request.session.get(REVEALED, []):
+        return False
+    return _may_reveal(row, current_member(request))
 
 
 # `Wine 3`, `wine3`, `Vin 3` — a bottle still carrying the name it was given
@@ -193,11 +243,23 @@ def _detail(
 ):
     """The event's own page. Shared, so a refused bottle comes back on it."""
     wines = queries.event_wines(db, row["id"])
+    member = current_member(request)
+    # Worked out here rather than in Jinja, because the same answer decides
+    # what the page prints *and* what two routes allow. Read from the request
+    # rather than taken as an argument: a dozen routes reach this helper, and
+    # `deps.get_member` is a thin wrapper over exactly this call.
+    revealed = _is_revealed(request, row)
     return page(
         request,
         "events/detail.html",
         event=row,
         wines=wines,
+        # Everything about a blind evening's page hangs off this one flag: the
+        # names, the region and grape, the label pictures, what the Remove
+        # button asks you to confirm, and whether Edit is offered at all.
+        hidden=_blind(row) and not revealed,
+        revealed=revealed,
+        may_reveal=_may_reveal(row, member),
         # Said before closing, not after: a bottle filed as "Wine 3" joins a
         # cellar of named ones and nothing there can tell you what it was.
         unnamed=_unnamed(wines),
@@ -353,7 +415,7 @@ async def read_label_for_bottle(
     row = queries.event(db, event_id)
     if row is None:
         raise HTTPException(404, "No such event")
-    if row["kind"] == "blind" and not row["tasting_id"]:
+    if _blind(row) and not _is_revealed(request, row):
         return _detail(request, db, cfg, row, status=400,
                        error="A blind evening's bottles are named when it closes.")
     try:
@@ -454,7 +516,7 @@ async def edit_wine(
     row = queries.event(db, event_id)
     if row is None:
         raise HTTPException(404, "No such event")
-    if row["kind"] == "blind" and not row["tasting_id"]:
+    if _blind(row) and not _is_revealed(request, row):
         return _detail(request, db, cfg, row, status=400,
                        error="A blind evening's bottles are named when it closes.")
     if not name.strip():
@@ -509,6 +571,37 @@ async def reopen(request: Request, db: Db, cfg: Cfg, _: LoggedIn, event_id: int)
     refused = db.reopen_event(event_id)
     if refused:
         return _detail(request, db, cfg, row, error=refused, status=409)
+    return RedirectResponse(f"/events/{event_id}", status_code=303)
+
+
+@router.post("/{event_id}/reveal")
+async def reveal(request: Request, db: Db, cfg: Cfg, _: LoggedIn, event_id: int):
+    """Show the responsible the bottles they registered, or hide them again.
+
+    A toggle, because the button's own label says which way it will go. What it
+    writes is one number in this browser's session — nothing in the database,
+    because a reveal is the responsible's own business and not something that
+    happens to the other eight.
+
+    The rule is here and not only in the markup. A page that merely omits a
+    button is a page whose route can still be posted to.
+    """
+    row = queries.event(db, event_id)
+    if row is None:
+        raise HTTPException(404, "No such event")
+    if not _blind(row):
+        return _detail(request, db, cfg, row, status=400,
+                       error="Nothing is hidden on this evening.")
+    if not _may_reveal(row, current_member(request)):
+        return _detail(request, db, cfg, row, status=403,
+                       error="Only whoever is responsible for the evening can "
+                             "see the bottles before it is over.")
+
+    # A list rather than a set: the session is stored as JSON.
+    asked = [i for i in request.session.get(REVEALED, []) if i != event_id]
+    if not _is_revealed(request, row):
+        asked.append(event_id)
+    request.session[REVEALED] = asked
     return RedirectResponse(f"/events/{event_id}", status_code=303)
 
 

@@ -47,6 +47,14 @@ up for it. Once it has been held, one button moves it into the archive, and its
 wines land in the cellar ready to be scored. A blind evening keeps its bottles'
 names in the database all along and simply refuses to print them until then.
 
+A blind evening used to leave one person stuck: whoever was responsible had
+registered the bottles and then could not see their own lineup. They now get a
+**Reveal** button — for their browser only, with the page saying so while they
+are looking, so it is not passed round unawares. Nobody else's page changes,
+and the scoring page stays blind for everyone. It is a guard rail rather than a
+lock: without Cloudflare Access in front, signing in is a club password and
+then picking your own name.
+
 **Bring your own** is the club's other blind evening and the opposite shape:
 nine members turn up with nine bottles nobody knows in advance, so there is
 nothing to register beforehand. The bottles go in *called* Wine 1, Wine 2, and
@@ -94,6 +102,27 @@ back. Each run starts fresh; `--keep` carries on with the last copy.
 `--behind-cloudflare` is for serving a sandbox through the tunnel, where Access
 should stay on. Every page of a sandbox carries a **Test data** strip, and that
 follows the file rather than the flag, so it cannot be left on by mistake.
+
+**On a phone it installs.** The site carries a web app manifest, so *Add to
+Home Screen* gives it an icon and a full screen with no address bar — which is
+the whole of what a native app would have been for nine people. On an iPhone:
+Share → Add to Home Screen. On Android: Chrome offers it, or menu → Install
+app. Nothing else changes; it is the same page on the same server.
+
+The icons are made from the club's wordmark, so they live with the rest of the
+club's pictures — outside the repository, on the machine that serves the site.
+A checkout without them is not broken; it simply cannot be installed, and says
+so in the log at startup rather than leaving you to wonder why the phone will
+not offer it.
+
+Two details that are invisible until they break. The manifest is linked
+`crossorigin="use-credentials"`, because behind Cloudflare Access a manifest
+fetched without cookies is answered with the login page and the install is
+silently refused. And `/sw.js` is served from the root rather than `/static`,
+because a service worker controls its own directory and below — under `/static`
+it would install happily and control nothing. It caches no page that can
+change: its only job is to show `/offline`, in the club's own words, when the
+server is not reachable.
 
 **Signing in** is one club password, then you pick your name. That is honestly
 all it is: anyone with the password can pick any name, which is fine for nine
