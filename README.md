@@ -47,6 +47,14 @@ up for it. Once it has been held, one button moves it into the archive, and its
 wines land in the cellar ready to be scored. A blind evening keeps its bottles'
 names in the database all along and simply refuses to print them until then.
 
+A blind evening used to leave one person stuck: whoever was responsible had
+registered the bottles and then could not see their own lineup. They now get a
+**Reveal** button — for their browser only, with the page saying so while they
+are looking, so it is not passed round unawares. Nobody else's page changes,
+and the scoring page stays blind for everyone. It is a guard rail rather than a
+lock: without Cloudflare Access in front, signing in is a club password and
+then picking your own name.
+
 **Bring your own** is the club's other blind evening and the opposite shape:
 nine members turn up with nine bottles nobody knows in advance, so there is
 nothing to register beforehand. The bottles go in *called* Wine 1, Wine 2, and

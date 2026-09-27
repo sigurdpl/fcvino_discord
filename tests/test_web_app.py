@@ -1126,7 +1126,7 @@ def test_a_blind_evening_does_not_name_its_bottles(signed_in, cellar):
     assert "Vega Sicilia Unico" not in page
     assert "Pingus Ribera" not in page
     assert "Nebbiolo" not in page
-    assert "Wine 1" in page and "Wine 2" in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
     assert "Thomas" in page, "who brought it still shows, so the list is usable"
     assert cellar.query("SELECT name FROM event_wines")[0]["name"] == "Vega Sicilia Unico"
 
@@ -1136,7 +1136,7 @@ def test_archiving_a_blind_evening_names_them(signed_in, cellar):
     signed_in.post(f"/events/{event_id}/close")
     page = signed_in.get(f"/events/{event_id}").text
     assert "Vega Sicilia Unico" in page
-    assert "Wine 1" not in page
+    assert ">Wine 1<" not in page
     assert cellar.query("SELECT * FROM wines WHERE name = 'Vega Sicilia Unico'") != []
 
 
@@ -1172,7 +1172,7 @@ def test_a_byo_evening_shows_its_bottles_by_name(signed_in, cellar):
     signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
     page = signed_in.get(f"/events/{event_id}").text
     assert "Vega Sicilia Unico" in page, "a revealed bottle is named at once"
-    assert "Wine 1" in page and "Wine 2" in page, "and an unrevealed one says so"
+    assert ">Wine 1<" in page and ">Wine 2<" in page, "and an unrevealed one says so"
 
 
 def test_a_byo_evening_is_editable_while_it_runs(signed_in, cellar):
@@ -1229,6 +1229,163 @@ def test_a_named_lineup_is_not_warned_about(signed_in, cellar):
     event_id = three_bottles(signed_in, cellar)
     signed_in.post(f"/events/{event_id}/wines", data={"name": "Wine O'Clock 2019"})
     assert "still called Wine N" not in signed_in.get(f"/events/{event_id}").text
+
+
+# -- reveal: the responsible can see what they registered --------------------
+#
+# The one person a blind evening used to leave stuck. They bought the bottles
+# and typed them in, and the page then refused to show them their own lineup.
+# So they can ask for it back — for their own browser, and nobody else's.
+
+
+def blind_hosted_by(client, db, host="Morten", when=GONE):
+    """A blind evening with a responsible, and two bottles nobody can see."""
+    kinded(client, "blind", theme="Blind night", starts_at=when, host=host)
+    event_id = latest(db)["id"]
+    for name in ("Vega Sicilia Unico", "Pingus Ribera"):
+        client.post(f"/events/{event_id}/wines", data={"name": name})
+    return event_id
+
+
+def test_the_names_are_not_in_the_page_at_all_before_a_reveal(signed_in, cellar):
+    """The property the whole feature rests on. Hiding them with a stylesheet
+    would look identical and give every name away to anyone who looked."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in page
+    assert "Pingus Ribera" not in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
+
+
+def test_the_responsible_is_offered_the_button_and_nobody_else_is(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+
+    as_member(signed_in, "Andy", cellar)
+    assert "Reveal the bottles" not in signed_in.get(f"/events/{event_id}").text
+
+    as_member(signed_in, "Morten", cellar)
+    assert "Reveal the bottles" in signed_in.get(f"/events/{event_id}").text
+
+
+def test_the_route_refuses_anyone_else_not_just_the_button(signed_in, cellar):
+    """A page that merely leaves a button out is a page whose route can still
+    be posted to."""
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+    as_member(signed_in, "Andy", cellar)
+
+    response = signed_in.post(f"/events/{event_id}/reveal", follow_redirects=False)
+    assert response.status_code == 403
+    assert "responsible" in response.text
+    assert "Vega Sicilia Unico" not in response.text, "and it says no without saying what"
+
+
+def test_revealing_shows_the_responsible_their_own_lineup(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" in page and "Pingus Ribera" in page
+    assert ">Wine 1<" not in page
+    assert "Hide them again" in page
+    assert "Only this phone sees the names" in page, "so it is not passed round unawares"
+
+
+def test_a_reveal_changes_nobody_elses_page(signed_in, cellar):
+    """The test that would catch a reveal implemented as a flag on the event.
+    Two browsers, one database: Morten looks, Andy still sees Wine 1."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+
+    andy = TestClient(signed_in.app)
+    andy.post("/login", data={"password": PASSWORD})
+    as_member(andy, "Andy", cellar)
+    theirs = andy.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in theirs
+    assert ">Wine 1<" in theirs
+
+
+def test_hiding_them_again_puts_it_back(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/reveal")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in page
+    assert ">Wine 1<" in page
+    assert "Reveal the bottles" in page
+
+
+def test_a_reveal_does_not_outlive_being_the_responsible(signed_in, cellar):
+    """Re-checked on every render rather than trusted from the session, so
+    handing the evening to somebody else takes the names back."""
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+
+    cellar.execute("UPDATE events SET host='Andy' WHERE id=?", (event_id,))
+    assert "Vega Sicilia Unico" not in signed_in.get(f"/events/{event_id}").text
+
+
+def test_with_nobody_responsible_the_page_says_so(signed_in, cellar):
+    """Rather than a button nobody can press, or none and no explanation."""
+    kinded(signed_in, "blind", theme="Unhosted", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    as_member(signed_in, "Morten", cellar)
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Nobody is down as responsible yet" in page
+    assert "Reveal the bottles" not in page
+    assert "Vega Sicilia Unico" not in page
+
+
+def test_revealing_is_meaningless_on_an_evening_that_hides_nothing(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    response = signed_in.post(f"/events/{event_id}/reveal", follow_redirects=False)
+    assert response.status_code == 400
+    assert "Nothing is hidden" in response.text
+
+
+def test_the_scoring_page_stays_blind_even_for_the_responsible(signed_in, cellar):
+    """Revealing is for checking the lineup, not for scoring with the answers
+    in front of you — and everyone is on the scoring page together."""
+    kinded(signed_in, "blind", theme="Tonight", starts_at=tonight(), host="Morten")
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/start")
+
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+    card = signed_in.get(f"/events/{event_id}/vote").text
+    assert "Vega Sicilia Unico" not in card
+    assert ">Wine 1<" in card
+
+
+def test_a_revealed_bottle_can_be_corrected(signed_in, cellar):
+    """Look and fix: they registered it, so they can mend a typo in it."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    wine_id = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                           (event_id,))[0]["id"]
+
+    refused = signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                             data={"name": "Vega Sicilia Unico 1996"})
+    assert refused.status_code == 400, "not before it is revealed"
+    assert "named when it closes" in refused.text
+
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                   data={"name": "Vega Sicilia Unico 1996", "vintage": "1996"})
+    row = cellar.query_one("SELECT * FROM event_wines WHERE id=?", (wine_id,))
+    assert (row["name"], row["vintage"]) == ("Vega Sicilia Unico 1996", 1996)
 
 
 def test_an_ordinary_tasting_names_its_bottles_all_along(signed_in, cellar):
@@ -1875,7 +2032,7 @@ def test_a_blind_evening_is_scored_without_names(signed_in, cellar):
     page = signed_in.get(f"/events/{event_id}/vote").text
     assert "Vega Sicilia Unico" not in page
     assert "Pingus Ribera" not in page
-    assert "Wine 1" in page and "Wine 2" in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
 
 
 # -- closing ----------------------------------------------------------------
@@ -2463,7 +2620,7 @@ def test_a_blind_evening_shows_no_bottle(signed_in, cellar):
     as_member(signed_in, "Morten", cellar)
     page = signed_in.get(f"/events/{event_id}/vote").text
     assert "bilder.vinmonopolet.no" not in page
-    assert "Wine 1" in page
+    assert ">Wine 1<" in page
 
 
 def test_label_url_reads_both_kinds_of_row(cellar):
