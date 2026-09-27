@@ -423,8 +423,10 @@ button[disabled], button[disabled]:hover {
 button.tiny { padding: .1rem .35rem; font-size: .75rem; line-height: 1; }
 tr.lifting { background: var(--surface-2); opacity: .75; }
 
-#viewfinder { flex-basis: 100%; display: flex; flex-direction: column; gap: .5rem; }
-#viewfinder video {
+/* A class rather than an id: there is a reader on the add form and one inside
+   every bottle's edit panel, so a page can hold a dozen of them. */
+.viewfinder { flex-basis: 100%; display: flex; flex-direction: column; gap: .5rem; }
+.viewfinder video {
   width: 100%; max-width: 30rem; border-radius: 10px; background: #000;
 }
 

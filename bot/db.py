@@ -98,12 +98,20 @@ CREATE INDEX IF NOT EXISTS idx_tastings_when ON tastings(year, month);
 --   tasting  an ordinary evening, bottles named on the page
 --   blind    the same, but the bottles show as Wine 1, Wine 2 until it is
 --            archived — the names live here throughout, only the page hides them
+--   byo      bring your own: nine members, nine bottles, nobody knows them in
+--            advance. The bottles go in *called* Wine 1, Wine 2 and are renamed
+--            one at a time as they are revealed, so nothing here is hidden —
+--            the name is the state, and it is the club's to change all evening
 --   trip     an away trip, which runs over days and ends up in `trips`
 --   other    whatever else the club decides to do; `notes` is its description
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Only a database created from this schema carries the check: `kind`
+    -- arrived in the existing ones as a plain ALTER TABLE ADD COLUMN, so they
+    -- enforce nothing. The route's `kind not in KINDS` is what actually does
+    -- the work; this is here so a fresh database agrees with a migrated one.
     kind       TEXT    NOT NULL DEFAULT 'tasting'
-               CHECK (kind IN ('tasting', 'blind', 'trip', 'other')),
+               CHECK (kind IN ('tasting', 'blind', 'byo', 'trip', 'other')),
     theme      TEXT    NOT NULL,
     location   TEXT,
     host       TEXT,

@@ -41,15 +41,24 @@ the same bottle turned up at more than one evening — what it scored each time.
 Ch. Musar 2005 is the example to look at: 92.3 at its own evening in 2020, 85.0
 in January 2014, and 65.8 in 2013.
 
-**Events** is the diary: an evening to come — a tasting, a blind tasting, an
-away trip or something else entirely — with the bottles lined up for it. Once it
-has been held, one button moves it into the archive, and its wines land in the
-cellar ready to be scored. A blind evening keeps its bottles' names in the
-database all along and simply refuses to print them until then.
+**Events** is the diary: an evening to come — a tasting, a blind tasting, a
+bring-your-own, an away trip or something else entirely — with the bottles lined
+up for it. Once it has been held, one button moves it into the archive, and its
+wines land in the cellar ready to be scored. A blind evening keeps its bottles'
+names in the database all along and simply refuses to print them until then.
+
+**Bring your own** is the club's other blind evening and the opposite shape:
+nine members turn up with nine bottles nobody knows in advance, so there is
+nothing to register beforehand. The bottles go in *called* Wine 1, Wine 2, and
+each is renamed as it is revealed during the evening — which is what the camera
+on the Edit form is for. Nothing is hidden, because the name is the state.
+Closing an evening with placeholders still on it is allowed, and said out loud
+first: they would go into the cellar called Wine 3.
 
 Registering eight bottles on a phone is eight long names to type, so where an
-`ANTHROPIC_API_KEY` is set the "Add a bottle" panel offers to **photograph the
-label** instead: the photo is read by Claude and the form comes back filled in,
+`ANTHROPIC_API_KEY` is set the "Add a bottle" panel — and every bottle's Edit
+form, which is where a BYO reveal happens — offers to **photograph the label**
+instead: the photo is read by Claude and the form comes back filled in,
 for a person to check and press Add. It writes nothing by itself — a vision
 model reading a decorative label can be confidently wrong, and anything the
 label doesn't say comes back blank rather than guessed. The photo is sent, read

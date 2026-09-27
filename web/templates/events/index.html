@@ -36,7 +36,7 @@
         <label>Where
           <input name="location" placeholder="Thomas's">
         </label>
-        <label data-for="tasting blind other">Responsible
+        <label data-for="tasting blind byo other">Responsible
           <select name="host">
             <option value="">— nobody yet —</option>
             {% for m in members or [] %}<option value="{{ m['name'] }}">{{ m['name'] }}</option>{% endfor %}

@@ -952,7 +952,7 @@ def latest(db):
     return db.query("SELECT * FROM events ORDER BY id DESC")[0]
 
 
-@pytest.mark.parametrize("kind", ["tasting", "blind", "trip", "other"])
+@pytest.mark.parametrize("kind", ["tasting", "blind", "byo", "trip", "other"])
 def test_each_kind_can_be_registered(signed_in, cellar, kind):
     extra = {"country": "Belgium"} if kind == "trip" else {}
     assert kinded(signed_in, kind, **extra).status_code == 303
@@ -999,6 +999,97 @@ def test_archiving_a_blind_evening_names_them(signed_in, cellar):
     assert "Vega Sicilia Unico" in page
     assert "Wine 1" not in page
     assert cellar.query("SELECT * FROM wines WHERE name = 'Vega Sicilia Unico'") != []
+
+
+# -- BYO: the bottles are placeholders until somebody reveals them ----------
+#
+# The other blind evening. Nine members, nine bottles, nobody knows whose is
+# whose — so there is nothing to register in advance and the reveal happens
+# mid-evening, which is precisely when a blind tasting refuses to let anyone
+# touch a name. The page hides nothing here: a bottle reads "Wine 3" because
+# that is what it is called, and reads the real thing the moment it is saved.
+
+
+def flattened(page):
+    """The page with its runs of whitespace closed up.
+
+    Jinja wraps a sentence across several lines and HTML does not care; a test
+    asserting on that sentence should not care either."""
+    return " ".join(page.split())
+
+
+def byo_with_placeholders(client, db, when=GONE):
+    kinded(client, "byo", theme="Bring your own", starts_at=when)
+    event_id = latest(db)["id"]
+    for name in ("Wine 1", "Wine 2"):
+        client.post(f"/events/{event_id}/wines", data={"name": name})
+    return event_id
+
+
+def test_a_byo_evening_shows_its_bottles_by_name(signed_in, cellar):
+    """Including when the name *is* Wine 3 — there is no second notion of
+    revealed-ness to keep in step, so a placeholder simply prints itself."""
+    event_id = byo_with_placeholders(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" in page, "a revealed bottle is named at once"
+    assert "Wine 1" in page and "Wine 2" in page, "and an unrevealed one says so"
+
+
+def test_a_byo_evening_is_editable_while_it_runs(signed_in, cellar):
+    """The rule a blind evening needs is backwards here: revealing is the point,
+    and it happens with the evening under way."""
+    event_id = byo_with_placeholders(signed_in, cellar)
+    wine_id = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                           (event_id,))[0]["id"]
+    assert ">Edit<" in signed_in.get(f"/events/{event_id}").text
+
+    signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                   data={"name": "Pingus Ribera", "vintage": "2019"})
+    row = cellar.query_one("SELECT * FROM event_wines WHERE id=?", (wine_id,))
+    assert (row["name"], row["vintage"]) == ("Pingus Ribera", 2019)
+
+
+def test_closing_with_placeholders_says_so_and_still_closes(signed_in, cellar):
+    """Not refused — the club's own archive holds a `Vin 1` from a survey that
+    went in the same way — but said before the press, not discovered after."""
+    event_id = byo_with_placeholders(signed_in, cellar)
+    assert "2 of the bottles are still called Wine N" in flattened(
+        signed_in.get(f"/events/{event_id}").text)
+
+    signed_in.post(f"/events/{event_id}/close")
+    filed = cellar.query_one("SELECT tasting_id FROM events WHERE id=?", (event_id,))[0]
+    assert [r["name"] for r in cellar.query(
+        "SELECT name FROM wines WHERE tasting_id=? ORDER BY id", (filed,))] \
+        == ["Wine 1", "Wine 2"]
+
+
+def test_the_warning_is_there_while_the_evening_is_running(signed_in, cellar):
+    """Where it is actually useful: the reveal happens between Start and Close,
+    so the sentence has to be on the page that holds the Close button."""
+    kinded(signed_in, "byo", theme="Tonight's BYO", starts_at=tonight())
+    event_id = latest(cellar)["id"]
+    for name in ("Wine 1", "Wine 2"):
+        signed_in.post(f"/events/{event_id}/wines", data={"name": name})
+    signed_in.post(f"/events/{event_id}/start")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Close event" in page
+    assert "2 of the bottles are still called Wine N" in flattened(page)
+
+    wine_id = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                           (event_id,))[0]["id"]
+    signed_in.post(f"/events/{event_id}/wines/{wine_id}", data={"name": "Vega Sicilia Unico"})
+    assert "1 of the bottles is still called Wine N" in flattened(
+        signed_in.get(f"/events/{event_id}").text)
+
+
+def test_a_named_lineup_is_not_warned_about(signed_in, cellar):
+    """The warning has to be worth reading, so an ordinary evening never sees
+    it — and neither does a bottle whose name merely contains the word."""
+    event_id = three_bottles(signed_in, cellar)
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Wine O'Clock 2019"})
+    assert "still called Wine N" not in signed_in.get(f"/events/{event_id}").text
 
 
 def test_an_ordinary_tasting_names_its_bottles_all_along(signed_in, cellar):
@@ -1276,6 +1367,105 @@ def test_a_label_it_cannot_read_says_so(with_camera, evening, monkeypatch):
     assert "Couldn&#39;t read a wine off that one." in response.text
     assert "Photograph the label" in response.text, "and you can try another photo"
     assert 'name="name"' in response.text, "or type it in"
+
+
+# -- photographing a bottle that is already on the list ---------------------
+#
+# The same reader on the edit form, which is what makes a BYO evening work: the
+# wine is revealed, somebody points a phone at it, and the placeholder's own
+# form comes back filled in for a person to check and save.
+
+
+@pytest.fixture()
+def revealing(with_camera, cellar):
+    """A BYO evening with two placeholders on it, mid-reveal."""
+    kinded(with_camera, "byo", theme="Bring your own", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    for name in ("Wine 1", "Wine 2"):
+        with_camera.post(f"/events/{event_id}/wines", data={"name": name})
+    return event_id
+
+
+def staged(db, event_id):
+    return db.query("SELECT * FROM event_wines WHERE event_id=? ORDER BY position",
+                    (event_id,))
+
+
+def panel(page, wine_id):
+    """One bottle's edit row, from its own id to the end of its form."""
+    found = page.split(f'id="edit-{wine_id}"')
+    assert len(found) == 2, f"no edit panel for bottle {wine_id}"
+    return found[1].split("</tr>")[0]
+
+
+def test_reading_a_label_opens_that_bottles_own_form(revealing, with_camera,
+                                                     cellar, monkeypatch):
+    first, second = staged(cellar, revealing)
+    reads(monkeypatch, name="Produttori del Barbaresco", producer="Produttori",
+          vintage=2019, country="Italy", region="Barbaresco", grape="Nebbiolo")
+
+    page = with_camera.post(f"/events/{revealing}/wines/{first['id']}/label",
+                            files={"photo": JPEG}).text
+    mine = panel(page, first["id"])
+    for value in ("Produttori del Barbaresco", "Produttori", "2019",
+                  "Italy", "Barbaresco", "Nebbiolo"):
+        assert f'value="{value}"' in mine
+    assert "hidden" not in mine.split(">")[0], "and the panel is open to be read"
+
+    theirs = panel(page, second["id"])
+    assert "Produttori" not in theirs, "the other bottle is left alone"
+    assert 'value="Wine 2"' in theirs
+    assert "hidden" in theirs.split(">")[0]
+
+
+def test_reading_a_label_for_a_bottle_writes_nothing(revealing, with_camera,
+                                                     cellar, monkeypatch):
+    """Same reason as the add form: a model reading a label can be confidently
+    wrong, and this name is the one the cellar keeps for fifteen years."""
+    first = staged(cellar, revealing)[0]
+    reads(monkeypatch, name="Produttori del Barbaresco")
+    with_camera.post(f"/events/{revealing}/wines/{first['id']}/label",
+                     files={"photo": JPEG})
+    assert [w["name"] for w in staged(cellar, revealing)] == ["Wine 1", "Wine 2"]
+
+
+def test_a_bad_photo_leaves_the_bottle_editable_by_hand(revealing, with_camera,
+                                                        cellar, monkeypatch):
+    first = staged(cellar, revealing)[0]
+    refuses(monkeypatch)
+    response = with_camera.post(f"/events/{revealing}/wines/{first['id']}/label",
+                                files={"photo": JPEG})
+    assert response.status_code == 400
+    assert "Couldn&#39;t read a wine off that one." in response.text
+    mine = panel(response.text, first["id"])
+    assert "hidden" not in mine.split(">")[0], "the panel stays open"
+    assert 'value="Wine 1"' in mine, "with the bottle as it was, to type over"
+
+
+def test_a_blind_evening_will_not_read_a_label_onto_a_bottle(with_camera, cellar,
+                                                             monkeypatch):
+    """The one rule that makes a blind evening blind, and the reason BYO needed
+    to be a kind of its own rather than a flag on that one."""
+    kinded(with_camera, "blind", theme="Blind night", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    with_camera.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    wine_id = staged(cellar, event_id)[0]["id"]
+
+    never_called(monkeypatch)
+    response = with_camera.post(f"/events/{event_id}/wines/{wine_id}/label",
+                                files={"photo": JPEG})
+    assert response.status_code == 400
+    assert "named when it closes" in response.text
+
+
+def test_every_bottle_carries_its_own_reader(revealing, with_camera, cellar):
+    """The script wires each `.shot` form on its own. With one id between them
+    a capture on the fourth bottle would fill the first bottle's form in."""
+    page = with_camera.get(f"/events/{revealing}").text
+    assert page.count('class="shot"') == 3, "two bottles, and the add form"
+    assert 'id="open-camera"' not in page and 'id="viewfinder"' not in page
+    for wine in staged(cellar, revealing):
+        assert f'action="/events/{revealing}/wines/{wine["id"]}/label"' in page
 
 
 def test_something_that_is_not_a_photo_is_refused_before_any_call(
