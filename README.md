@@ -111,11 +111,25 @@ the whole of what a native app would have been for nine people. On an iPhone:
 Share → Add to Home Screen. On Android: Chrome offers it, or menu → Install
 app. Nothing else changes; it is the same page on the same server.
 
-The icons are made from the club's wordmark, so they live with the rest of the
-club's pictures — outside the repository, on the machine that serves the site.
-A checkout without them is not broken; it simply cannot be installed, and says
-so in the log at startup rather than leaving you to wonder why the phone will
-not offer it.
+The icon is Robert's, and like the rest of the club's artwork it lives outside
+the repository. Make the three sizes from it with:
+
+```bash
+python scripts/make_icons.py data/fcvino_icon.jpeg
+```
+
+That squares the corners and pads the maskable sizes, which are the two things
+artwork always needs and neither of which is a change to the design. A rounded
+tile handed over as-is gets rounded a *second* time by the phone, leaving white
+slivers along the corners; and an Android launcher may crop an icon to a circle
+80% of its width, which would take the ends off a wordmark that fills its tile.
+The script measures how much room the mark actually needs and says what it did.
+
+It uses `sips`, so it is a Mac-side tool — copy the three PNGs to whatever
+machine serves the site, along with the wordmark and the photographs. A
+checkout without them is not broken; it simply cannot be installed, and says so
+in the log at startup rather than leaving you to wonder why the phone will not
+offer it.
 
 Two details that are invisible until they break. The manifest is linked
 `crossorigin="use-credentials"`, because behind Cloudflare Access a manifest
