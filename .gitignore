@@ -26,9 +26,6 @@ __pycache__/
 # them. A checkout without them is not broken: the stylesheet lays a gradient
 # under every photograph and the wordmark falls back to its own name, so the
 # page renders as the design without the photography.
-# The home-screen icons (icon-180/192/512.png) are made from the wordmark and
-# so are covered by this too. The site still runs without them — it just
-# cannot be installed on a phone, and says so in the log at startup.
 web/static/*.png
 web/static/*.jpg
 web/static/*.jpeg
@@ -36,3 +33,11 @@ web/static/*.gif
 web/static/*.webp
 # Robert's mockup carries the same photographs base64'd inside it.
 web/static/fcvino_dark_v2_preview.html
+
+# The home-screen icons, made from the club's artwork by scripts/make_icons.py.
+# Their own directory rather than web/static/ because they are the only pictures
+# the site serves without a login — Google's WebAPK builder fetches them itself
+# to make an Android app — so a Cloudflare Access bypass points at this prefix,
+# and nothing private may share it. The site runs without them; it just cannot
+# be installed on a phone, and says so in the log at startup.
+web/icons/

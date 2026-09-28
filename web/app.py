@@ -75,6 +75,15 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
 
+    # The home-screen icons, and nothing else. Separate from /static because
+    # these are the only pictures that must be readable without signing in —
+    # Google's WebAPK builder fetches them from the open internet — and the
+    # Cloudflare Access bypass that allows it should not be able to reach the
+    # club's photographs by accident. `installable.py` says more.
+    icons = WEB_ROOT / "icons"
+    icons.mkdir(parents=True, exist_ok=True)
+    app.mount("/icons", StaticFiles(directory=str(icons)), name="icons")
+
     # The club's own label photographs, which beat Vinmonopolet's because they
     # are the actual bottle at the actual vintage. They live under `data/`,
     # gitignored like every other picture of the club's, so nothing here can

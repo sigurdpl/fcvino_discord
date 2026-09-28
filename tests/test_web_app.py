@@ -662,6 +662,40 @@ def test_the_manifest_says_what_an_installable_app_needs(signed_in):
     assert found["theme_color"] == found["background_color"]
 
 
+def test_nothing_the_installer_needs_lives_beside_the_photographs(signed_in):
+    """The reason the icons have a directory of their own.
+
+    Google's WebAPK builder fetches the manifest and the icons *itself*, from
+    the open internet with no cookies, so those paths need a Cloudflare Access
+    bypass. `web/static/` also holds cover.jpg, fcvino-group.jpg and
+    fcvino-stadium.jpg — photographs of the nine of them. A bypass written one
+    character too wide would publish those, so nothing an installer reaches is
+    allowed to share a prefix with them.
+    """
+    from web.routes.installable import ICON_DIR
+
+    for icon in manifest_of(signed_in).json()["icons"]:
+        assert icon["src"].startswith("/icons/"), icon["src"]
+
+    link = re.search(r'rel="apple-touch-icon" href="([^"?]+)', signed_in.get("/wine").text)
+    assert link and link.group(1).startswith("/icons/"), "iOS's icon too"
+
+    stray = [f.name for f in ICON_DIR.iterdir() if not f.name.startswith("icon-")]
+    assert not stray, f"{stray} is under a prefix that is served without a login"
+
+
+def test_the_paths_a_bypass_will_open_need_no_session(client):
+    """What the Access rule assumes, asserted here so the two cannot drift.
+    Every one of these is fetched by something that has never signed in."""
+    for path in ("/manifest.webmanifest", "/icons/icon-192.png", "/sw.js", "/offline"):
+        # Not following the redirect, because the login page it would land on
+        # is itself a 200 — which let a route that wanted a session pass this.
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, \
+            f"{path} answered {response.status_code}; something wants a session"
+        assert "/login" not in response.headers.get("location", "")
+
+
 def test_every_icon_the_manifest_names_is_actually_served(signed_in):
     """The silent failure. A manifest pointing at a file that is not there
     leaves Android simply declining to install, with nothing said anywhere."""
@@ -686,7 +720,7 @@ def test_a_checkout_without_the_clubs_pictures_names_no_icon(signed_in, tmp_path
     one outcome worth avoiding: Android declines to install and says nothing."""
     from web.routes import installable
 
-    monkeypatch.setattr(installable, "STATIC", tmp_path)
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
     assert manifest_of(signed_in).json()["icons"] == []
     assert sorted(installable.missing_icons()) == [
         "icon-180.png", "icon-192.png", "icon-512.png"]
@@ -701,7 +735,7 @@ def test_a_missing_icon_is_said_out_loud_at_startup(cellar, tmp_path, monkeypatc
     nothing in any log or any browser to say why."""
     from web.routes import installable
 
-    monkeypatch.setattr(installable, "STATIC", tmp_path)
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
     cfg = dataclasses.replace(
         config.load(require_discord=False),
         db_path=tmp_path / "pi.sqlite3", web_password=PASSWORD,
@@ -728,7 +762,7 @@ def test_the_page_links_the_manifest_with_credentials(signed_in):
 def test_the_page_carries_what_ios_reads(signed_in):
     """iOS ignores the manifest's icons and display mode and reads these."""
     page = signed_in.get("/wine").text
-    assert re.search(r'rel="apple-touch-icon" href="/static/icon-180\.png', page), \
+    assert re.search(r'rel="apple-touch-icon" href="/icons/icon-180\.png', page), \
         "this checkout has the club's pictures, so it should be linked"
     assert '<meta name="apple-mobile-web-app-capable" content="yes">' in page
     assert '<meta name="apple-mobile-web-app-title" content="FC Vino">' in page

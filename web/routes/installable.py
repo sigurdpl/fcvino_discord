@@ -29,7 +29,14 @@ from ..deps import WEB_ROOT, templates
 
 router = APIRouter()
 
-STATIC = WEB_ROOT / "static"
+# Their own directory, not `web/static/`, and that is the whole point. These
+# three files have to be fetchable *without signing in* — Google's WebAPK
+# builder downloads them itself, from the open internet, to make an Android
+# app — which means a Cloudflare Access bypass rule pointed at wherever they
+# live. `web/static/` also holds photographs of the nine members, and a bypass
+# written one character too wide would publish those. So nothing private is
+# allowed to share this prefix. See the README for the Access policy.
+ICON_DIR = WEB_ROOT / "icons"
 
 # What a launcher draws. 192 and 512 are the two Android asks for; 180 is
 # iOS's, which is linked from the page rather than named here because iOS
@@ -46,7 +53,7 @@ THEME = "#0a0b0a"
 def missing_icons() -> list[str]:
     """Which home-screen icons this checkout has not got, for the startup log."""
     wanted = [APPLE_ICON, *(name for _, name in ICONS)]
-    return [name for name in wanted if not (STATIC / name).exists()]
+    return [name for name in wanted if not (ICON_DIR / name).exists()]
 
 
 def _icons() -> list[dict]:
@@ -54,12 +61,12 @@ def _icons() -> list[dict]:
 
     `any` is drawn as given; `maskable` may be cropped to whatever shape the
     launcher likes, usually a circle. The same file serves both because it is
-    padded to keep the wordmark inside the central 80% — the safe zone — which
-    is the whole reason it is a square of burgundy rather than a tight crop.
+    padded to keep the mark inside the central 80% — the safe zone — which is
+    what `scripts/make_icons.py` measures when it makes them.
     """
-    found = [(size, name) for size, name in ICONS if (STATIC / name).exists()]
+    found = [(size, name) for size, name in ICONS if (ICON_DIR / name).exists()]
     return [
-        {"src": f"/static/{name}", "sizes": f"{size}x{size}",
+        {"src": f"/icons/{name}", "sizes": f"{size}x{size}",
          "type": "image/png", "purpose": purpose}
         for purpose in ("any", "maskable")
         for size, name in found
@@ -105,7 +112,7 @@ async def service_worker():
     every other fix: browsers re-check it, but only if allowed to.
     """
     return FileResponse(
-        STATIC / "sw.js",
+        WEB_ROOT / "static" / "sw.js",
         media_type="text/javascript",
         headers={"Cache-Control": "no-cache"},
     )

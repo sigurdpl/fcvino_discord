@@ -23,7 +23,7 @@
   {#- iOS ignores the manifest's icons and reads this one. Linked only where it
       exists: the club's pictures are not in the repository, and a link to a
       missing icon has iOS quietly screenshot the page instead. -#}
-  {% if apple_icon %}<link rel="apple-touch-icon" href="{{ static(apple_icon) }}">{% endif %}
+  {% if apple_icon %}<link rel="apple-touch-icon" href="{{ apple_icon }}">{% endif %}
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="FC Vino">

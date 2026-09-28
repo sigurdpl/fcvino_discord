@@ -3,7 +3,7 @@
 
     python scripts/make_icons.py data/fcvino_icon.jpeg
 
-Writes `web/static/icon-180.png`, `icon-192.png` and `icon-512.png`, which is
+Writes `web/icons/icon-180.png`, `icon-192.png` and `icon-512.png`, which is
 what `web/routes/installable.py` looks for when it builds the manifest, and
 what `web/deps.py:apple_icon` links for iOS.
 
@@ -46,7 +46,9 @@ from collections import deque
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-STATIC = REPO / "web" / "static"
+# Their own directory: these are the only pictures the site serves without a
+# login, so nothing private is allowed to share their prefix. See web/app.py.
+ICONS_INTO = REPO / "web" / "icons"
 
 # iOS reads the first from the page and never crops it, only rounds it. The
 # other two are the manifest's, and are declared maskable as well as plain.
@@ -303,7 +305,7 @@ def resize(source: Path, target: Path, side: int) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artwork", type=Path, help="a square picture of the icon")
-    parser.add_argument("--into", type=Path, default=STATIC)
+    parser.add_argument("--into", type=Path, default=ICONS_INTO)
     args = parser.parse_args(argv)
 
     try:

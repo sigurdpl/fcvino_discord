@@ -125,11 +125,36 @@ slivers along the corners; and an Android launcher may crop an icon to a circle
 80% of its width, which would take the ends off a wordmark that fills its tile.
 The script measures how much room the mark actually needs and says what it did.
 
-It uses `sips`, so it is a Mac-side tool — copy the three PNGs to whatever
-machine serves the site, along with the wordmark and the photographs. A
+It uses `sips`, so it is a Mac-side tool — copy the three PNGs from
+`web/icons/` to whatever machine serves the site, along with the wordmark and
+the photographs in `web/static/`. A
 checkout without them is not broken; it simply cannot be installed, and says so
 in the log at startup rather than leaving you to wonder why the phone will not
 offer it.
+
+**Android needs four paths let through Cloudflare Access.** Chrome's *Install*
+does not build the app on the phone — it asks Google's WebAPK server to build a
+real Android package, and **that server fetches the manifest and the icons
+itself, from the open internet, with no cookies**. Behind Access it is handed a
+login page instead, the build fails, and nothing installs, with nothing said
+anywhere about why. (iPhone is unaffected: Safari does the whole job locally
+with its own session.)
+
+So in Zero Trust → Access → Applications, add a self-hosted application for
+each of these, each with one policy of **Action: Bypass, Include: Everyone**:
+
+    app.fcvino.no/manifest.webmanifest
+    app.fcvino.no/icons/*
+    app.fcvino.no/sw.js
+    app.fcvino.no/offline
+
+Access matches the most specific path first, so these take precedence over the
+application covering the whole host. What that makes publicly readable: the
+club's name, the icon, a script that is already in this repository, and a page
+saying the server is not answering. **Every photograph, every bottle and every
+score stays behind Access** — which is why the icons have `/icons/` to
+themselves rather than sitting in `/static/` beside the photographs of the nine
+of us, where a bypass one character too wide would publish them.
 
 Two details that are invisible until they break. The manifest is linked
 `crossorigin="use-credentials"`, because behind Cloudflare Access a manifest

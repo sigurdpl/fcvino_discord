@@ -25,37 +25,41 @@ templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 
 def apple_icon() -> str | None:
-    """iOS's home-screen icon, or None where the club's pictures are absent.
+    """iOS's home-screen icon as a URL, or None where it has not been made.
 
-    Same reasoning as `static_url`'s: a checkout without the photographs is
+    Same reasoning as `static_url`'s: a checkout without the club's pictures is
     normal and must not be broken. Linking an icon that is not there costs more
     than linking none — iOS falls back to a screenshot of the page, which looks
     like a bug rather than like a missing file.
     """
-    from .routes.installable import APPLE_ICON, STATIC
+    from .routes.installable import APPLE_ICON, ICON_DIR
 
-    return APPLE_ICON if (STATIC / APPLE_ICON).exists() else None
+    if not (ICON_DIR / APPLE_ICON).exists():
+        return None
+    return stamped(f"/icons/{APPLE_ICON}", ICON_DIR / APPLE_ICON)
+
+
+def stamped(url: str, path: Path) -> str:
+    """`url` with a version taken from the file itself, or bare if it is absent.
+
+    The markup and everything it links are deployed together but cached apart,
+    so a browser — or Cloudflare, which sits in front of the tunnel — can hold
+    an old file against new HTML. That is not always cosmetic: it has already
+    produced a page with the wordmark drawn twice and four images collapsed to
+    nothing, because each of those depended on a rule the old stylesheet lacked.
+
+    Read per render rather than at startup, because `--reload` restarts on
+    Python changes and not on the files this stamps.
+    """
+    try:
+        return f"{url}?v={f'{path.stat().st_mtime_ns:x}'[-8:]}"
+    except OSError:
+        return url          # absent is normal: the club's pictures are not in git
 
 
 def static_url(name: str) -> str:
-    """`/static/<name>` with a version stamp taken from the file itself.
-
-    The markup and the stylesheet are deployed together but cached apart, so a
-    browser — or Cloudflare, which sits in front of the tunnel — can hold an old
-    stylesheet against new HTML. That is not a cosmetic mismatch: it has already
-    produced a page with the wordmark drawn twice and four images collapsed to
-    nothing, because each of those depends on a rule the old sheet lacked.
-
-    Stamping the URL means a changed file is a different URL, so no cache can
-    serve the stale one. Read per render rather than at startup, because
-    `--reload` restarts on Python changes and not on CSS ones.
-    """
-    path = WEB_ROOT / "static" / name
-    try:
-        stamp = f"{path.stat().st_mtime_ns:x}"[-8:]
-    except OSError:
-        return f"/static/{name}"      # absent is normal: the club's pictures
-    return f"/static/{name}?v={stamp}"
+    """`/static/<name>`, stamped, so no cache can serve an old one for new HTML."""
+    return stamped(f"/static/{name}", WEB_ROOT / "static" / name)
 
 
 def fmt_score(value: float | None, places: int = 1) -> str:
