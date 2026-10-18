@@ -132,38 +132,53 @@ checkout without them is not broken; it simply cannot be installed, and says so
 in the log at startup rather than leaving you to wonder why the phone will not
 offer it.
 
-**Android needs four paths let through Cloudflare Access.** Chrome's *Install*
-does not build the app on the phone — it asks Google's WebAPK server to build a
-real Android package, and **that server fetches the manifest and the icons
-itself, from the open internet, with no cookies**. Behind Access it is handed a
-login page instead, the build fails, and nothing installs, with nothing said
-anywhere about why. (iPhone is unaffected: Safari does the whole job locally
-with its own session.)
+**Android needs nothing let through Cloudflare Access.** It was once written
+here that it needed four paths opened, on the theory that Google's WebAPK
+builder fetches the manifest and the icons from the open internet. That was
+wrong: Chrome sends the icon data in the build request itself, and the install
+is minted in the background, so the only thing it needed was a minute's
+patience. It installs with no bypass at all.
 
-So in Zero Trust → Access → Applications, add a self-hosted application for
-each of these, each with one policy of **Action: Bypass, Include: Everyone**:
+**iPhone needs two paths opened, for the logo alone.** The icon is fetched by
+something that does not carry the Access session — Robert's iPhone opened the
+site full screen but showed a screenshot of the page where the icon belongs,
+through two filenames and two paths, and from the open internet every icon URL
+answers `302` to the login. So in Zero Trust → **Access controls →
+Applications**, add a self-hosted application for each of
 
-    app.fcvino.no/manifest.webmanifest
-    app.fcvino.no/icons/*
-    app.fcvino.no/sw.js
-    app.fcvino.no/offline
+    app.fcvino.no/apple-touch-icon.png
+    app.fcvino.no/apple-touch-icon-precomposed.png
+
+each with one policy of **Action: Bypass, Include: Everyone**. Read that as
+*everyone on the internet*, not everyone invited: Bypass means Access stops
+checking, with no email, no code and no entry in its log.
+
+What it makes publicly readable is **one PNG of the club's logo**. Not the
+manifest, not the worker, not `/icons/`, and nothing under `/static/` — which
+is where the photographs of the nine of us live, and the reason the icons were
+given `/icons/` to themselves rather than left beside them, where a bypass one
+character too wide would have published the lot.
 
 Access matches the most specific path first, so these take precedence over the
-application covering the whole host. What that makes publicly readable: the
-club's name, the icon, a script that is already in this repository, and a page
-saying the server is not answering. **Every photograph, every bottle and every
-score stays behind Access** — which is why the icons have `/icons/` to
-themselves rather than sitting in `/static/` beside the photographs of the nine
-of us, where a bypass one character too wide would publish them.
+application covering the whole host. To check the hole is the shape you meant:
+
+```bash
+curl -sI https://app.fcvino.no/apple-touch-icon.png   # want: 200 image/png
+curl -sI https://app.fcvino.no/                       # want: 302 to the login
+```
+
+The second request matters as much as the first.
+
+**And the thing that catches everyone: iOS takes the icon once**, at the moment
+Add to Home Screen is tapped, and never looks again. Nothing served afterwards
+reaches an icon already on a home screen — it has to be deleted and added
+again, and the Add dialog shows the icon it is about to use, so look there
+before tapping Add.
 
 The icon is linked as `/apple-touch-icon.png`, which is also where iOS goes
 looking of its own accord when a page's link is missing or unusable — so the
 tag and the fallback are one URL rather than two that have to agree, and the
-icon does not rest on a single tag being read correctly. Worth knowing when it
-still looks wrong on somebody's phone: **iOS takes the icon once, at the moment
-Add to Home Screen is tapped, and never looks again.** Nothing served
-afterwards reaches an icon already on a home screen; it has to be deleted and
-added again.
+icon does not rest on a single tag being read correctly.
 
 Two details that are invisible until they break. The manifest is linked
 `crossorigin="use-credentials"`, because behind Cloudflare Access a manifest
