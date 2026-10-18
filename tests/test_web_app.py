@@ -678,7 +678,8 @@ def test_nothing_the_installer_needs_lives_beside_the_photographs(signed_in):
         assert icon["src"].startswith("/icons/"), icon["src"]
 
     link = re.search(r'rel="apple-touch-icon" href="([^"?]+)', signed_in.get("/wine").text)
-    assert link and link.group(1).startswith("/icons/"), "iOS's icon too"
+    assert link, "no apple-touch-icon linked"
+    assert not link.group(1).startswith("/static/"), "iOS's icon too"
 
     stray = [f.name for f in ICON_DIR.iterdir() if not f.name.startswith("icon-")]
     assert not stray, f"{stray} is under a prefix that is served without a login"
@@ -687,7 +688,8 @@ def test_nothing_the_installer_needs_lives_beside_the_photographs(signed_in):
 def test_the_paths_a_bypass_will_open_need_no_session(client):
     """What the Access rule assumes, asserted here so the two cannot drift.
     Every one of these is fetched by something that has never signed in."""
-    for path in ("/manifest.webmanifest", "/icons/icon-192.png", "/sw.js", "/offline"):
+    for path in ("/manifest.webmanifest", "/icons/icon-192.png", "/sw.js", "/offline",
+                 "/apple-touch-icon.png"):
         # Not following the redirect, because the login page it would land on
         # is itself a 200 — which let a route that wanted a session pass this.
         response = client.get(path, follow_redirects=False)
@@ -762,7 +764,7 @@ def test_the_page_links_the_manifest_with_credentials(signed_in):
 def test_the_page_carries_what_ios_reads(signed_in):
     """iOS ignores the manifest's icons and display mode and reads these."""
     page = signed_in.get("/wine").text
-    assert re.search(r'rel="apple-touch-icon" href="/icons/icon-180\.png', page), \
+    assert 'rel="apple-touch-icon" href="/apple-touch-icon.png"' in page, \
         "this checkout has the club's pictures, so it should be linked"
     assert '<meta name="apple-mobile-web-app-capable" content="yes">' in page
     assert '<meta name="apple-mobile-web-app-title" content="FC Vino">' in page
@@ -778,6 +780,43 @@ def test_the_theme_colour_matches_the_page(signed_in):
     from web.deps import WEB_ROOT
     sheet = (WEB_ROOT / "static" / "style_dark2.css").read_text()
     assert re.search(r"--page:\s*#0a0b0a", sheet), "and it follows the stylesheet"
+
+
+def test_ios_can_find_the_icon_without_being_told(signed_in):
+    """The safety net. iOS tries these two at the root by itself when a page's
+    link is missing or it cannot use it, and without them the icon rests
+    entirely on one tag being read correctly by a part of iOS nobody can see
+    into — which is how a member ended up with a screenshot on his phone."""
+    from web.routes.installable import ICON_DIR
+
+    wanted = (ICON_DIR / "icon-180.png").read_bytes()
+    for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        response = signed_in.get(path)
+        assert response.status_code == 200, f"{path} is where iOS looks unprompted"
+        assert response.headers["content-type"] == "image/png"
+        assert response.content == wanted, f"{path} is not the icon itself"
+
+
+def test_the_tag_and_the_fallback_are_one_url(signed_in):
+    """Two URLs for one icon is two things that have to agree. And no version
+    stamp: an installed icon lives in the home-screen clip and is never fetched
+    again, so a stamp could not update it — it is only one more thing for an
+    undocumented fetcher to mishandle."""
+    page = signed_in.get("/wine").text
+    found = re.search(r'rel="apple-touch-icon" href="([^"]+)"', page)
+    assert found and found.group(1) == "/apple-touch-icon.png"
+    assert "?" not in found.group(1), "no query string on the one iOS reads"
+
+
+def test_without_the_artwork_there_is_no_icon_to_find(client, tmp_path, monkeypatch):
+    """A checkout without the club's pictures answers honestly, so iOS falls
+    back to a screenshot rather than to a broken image."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
+    for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        assert client.get(path).status_code == 404
+    assert "apple-touch-icon" not in client.get("/login").text
 
 
 def test_the_worker_is_served_from_the_root(signed_in):

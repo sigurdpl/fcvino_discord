@@ -32,11 +32,16 @@ def apple_icon() -> str | None:
     than linking none — iOS falls back to a screenshot of the page, which looks
     like a bug rather than like a missing file.
     """
-    from .routes.installable import APPLE_ICON, ICON_DIR
+    from .routes.installable import APPLE_FALLBACKS, APPLE_ICON, ICON_DIR
 
     if not (ICON_DIR / APPLE_ICON).exists():
         return None
-    return stamped(f"/icons/{APPLE_ICON}", ICON_DIR / APPLE_ICON)
+    # The path iOS also tries of its own accord, so the tag and the fallback
+    # are one URL rather than two that have to agree. Unstamped, unlike the
+    # stylesheet: an installed icon lives in the home-screen clip and is never
+    # fetched again, so a new stamp could not update it anyway — while a query
+    # string is one more thing for an undocumented fetcher to mishandle.
+    return APPLE_FALLBACKS[0]
 
 
 def stamped(url: str, path: Path) -> str:

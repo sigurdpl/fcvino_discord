@@ -22,7 +22,7 @@ ships in the repository, the other says the club's archive is not answering.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..deps import WEB_ROOT, templates
@@ -97,6 +97,30 @@ async def manifest():
         media_type="application/manifest+json",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+# iOS looks for these two at the root of the site by itself, when a page's
+# `apple-touch-icon` link is missing or it cannot make use of it. Serving them
+# is the difference between an icon that depends on one tag being read
+# correctly, by a part of iOS nobody can see into, and one that has a second
+# way to be found. `-precomposed` is the old name, still tried first by some
+# versions; both are the same file.
+APPLE_FALLBACKS = ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png")
+
+
+@router.get(APPLE_FALLBACKS[0], include_in_schema=False)
+@router.get(APPLE_FALLBACKS[1], include_in_schema=False)
+async def apple_touch_icon():
+    """The home-screen icon, where iOS goes looking for it unprompted.
+
+    404 where the club's artwork has not been copied to this machine, which is
+    the same answer `/icons/` gives and leaves iOS to fall back to a screenshot
+    rather than to a broken image.
+    """
+    icon = ICON_DIR / APPLE_ICON
+    if not icon.exists():
+        raise HTTPException(404, "No home-screen icon on this machine")
+    return FileResponse(icon, media_type="image/png")
 
 
 @router.get("/sw.js", include_in_schema=False)

@@ -156,6 +156,15 @@ score stays behind Access** — which is why the icons have `/icons/` to
 themselves rather than sitting in `/static/` beside the photographs of the nine
 of us, where a bypass one character too wide would publish them.
 
+The icon is linked as `/apple-touch-icon.png`, which is also where iOS goes
+looking of its own accord when a page's link is missing or unusable — so the
+tag and the fallback are one URL rather than two that have to agree, and the
+icon does not rest on a single tag being read correctly. Worth knowing when it
+still looks wrong on somebody's phone: **iOS takes the icon once, at the moment
+Add to Home Screen is tapped, and never looks again.** Nothing served
+afterwards reaches an icon already on a home screen; it has to be deleted and
+added again.
+
 Two details that are invisible until they break. The manifest is linked
 `crossorigin="use-credentials"`, because behind Cloudflare Access a manifest
 fetched without cookies is answered with the login page and the install is
