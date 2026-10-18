@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from bot.db import utcnow_iso
+
 from .. import queries
 from ..deps import Db, LoggedIn, page
 
@@ -28,6 +30,8 @@ async def index(request: Request, db: Db, _: LoggedIn):
         cities=trips["cities"],
         countries=trips["countries"],
         upcoming=queries.upcoming_events(db, UPCOMING),
+        # So the panel can mark an evening that is waiting to be closed.
+        now=utcnow_iso(),
         recent=queries.recent_activity(db, RECENT),
         top=queries.top_wines(db, TOP_WINES),
     )

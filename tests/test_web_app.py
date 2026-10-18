@@ -8,6 +8,7 @@ schema has to show up here as a failure.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -637,6 +638,217 @@ def test_the_masthead_says_its_name_without_the_logo_file(signed_in):
     assert re.search(r'class="brand"[^>]*>\s*<img [^>]*alt="FC Vino"', page)
 
 
+# -- installable: an icon on the home screen --------------------------------
+#
+# Add to Home Screen is as close to an app as nine people need. Everything
+# about it fails *silently* in a browser — a manifest served as the wrong type,
+# an icon that 404s, a worker out of scope — so it is all asserted here.
+
+
+def manifest_of(client):
+    response = client.get("/manifest.webmanifest")
+    assert response.status_code == 200
+    return response
+
+
+def test_the_manifest_says_what_an_installable_app_needs(signed_in):
+    response = manifest_of(signed_in)
+    assert response.headers["content-type"].startswith("application/manifest+json"), \
+        "served as anything else and every browser ignores it without comment"
+    found = response.json()
+    assert found["name"] == "FC Vino"
+    assert found["start_url"] == "/"
+    assert found["display"] == "standalone", "or it opens in a browser with an icon"
+    assert found["theme_color"] == found["background_color"]
+
+
+def test_nothing_the_installer_needs_lives_beside_the_photographs(signed_in):
+    """The reason the icons have a directory of their own.
+
+    Google's WebAPK builder fetches the manifest and the icons *itself*, from
+    the open internet with no cookies, so those paths need a Cloudflare Access
+    bypass. `web/static/` also holds cover.jpg, fcvino-group.jpg and
+    fcvino-stadium.jpg — photographs of the nine of them. A bypass written one
+    character too wide would publish those, so nothing an installer reaches is
+    allowed to share a prefix with them.
+    """
+    from web.routes.installable import ICON_DIR
+
+    for icon in manifest_of(signed_in).json()["icons"]:
+        assert icon["src"].startswith("/icons/"), icon["src"]
+
+    link = re.search(r'rel="apple-touch-icon" href="([^"?]+)', signed_in.get("/wine").text)
+    assert link, "no apple-touch-icon linked"
+    assert not link.group(1).startswith("/static/"), "iOS's icon too"
+
+    stray = [f.name for f in ICON_DIR.iterdir() if not f.name.startswith("icon-")]
+    assert not stray, f"{stray} is under a prefix that is served without a login"
+
+
+def test_the_paths_a_bypass_will_open_need_no_session(client):
+    """What the Access rule assumes, asserted here so the two cannot drift.
+    Every one of these is fetched by something that has never signed in."""
+    for path in ("/manifest.webmanifest", "/icons/icon-192.png", "/sw.js", "/offline",
+                 "/apple-touch-icon.png"):
+        # Not following the redirect, because the login page it would land on
+        # is itself a 200 — which let a route that wanted a session pass this.
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, \
+            f"{path} answered {response.status_code}; something wants a session"
+        assert "/login" not in response.headers.get("location", "")
+
+
+def test_every_icon_the_manifest_names_is_actually_served(signed_in):
+    """The silent failure. A manifest pointing at a file that is not there
+    leaves Android simply declining to install, with nothing said anywhere."""
+    icons = manifest_of(signed_in).json()["icons"]
+    assert icons, "an app with no icon cannot be installed"
+    for icon in icons:
+        served = signed_in.get(icon["src"])
+        assert served.status_code == 200, f"{icon['src']} is named but not served"
+        assert served.headers["content-type"] == "image/png"
+
+    sizes = {i["sizes"] for i in icons}
+    assert {"192x192", "512x512"} <= sizes, "the two Android asks for"
+    assert any(i.get("purpose") == "maskable" for i in icons), \
+        "or a launcher that crops to a circle cuts the wordmark's ends off"
+
+
+def test_a_checkout_without_the_clubs_pictures_names_no_icon(signed_in, tmp_path,
+                                                             monkeypatch):
+    """The icons are made from the wordmark, and the club's pictures are kept
+    out of the public repository — so a fresh checkout, and the Pi on the day
+    it is set up, will not have them. Naming an icon that is not there is the
+    one outcome worth avoiding: Android declines to install and says nothing."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
+    assert manifest_of(signed_in).json()["icons"] == []
+    assert sorted(installable.missing_icons()) == [
+        "icon-180.png", "icon-192.png", "icon-512.png"]
+
+    page = signed_in.get("/wine").text
+    assert "apple-touch-icon" not in page, \
+        "iOS screenshots the page when the icon 404s, which looks like a bug"
+
+
+def test_a_missing_icon_is_said_out_loud_at_startup(cellar, tmp_path, monkeypatch, caplog):
+    """Because the alternative is a site that simply never installs, with
+    nothing in any log or any browser to say why."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
+    cfg = dataclasses.replace(
+        config.load(require_discord=False),
+        db_path=tmp_path / "pi.sqlite3", web_password=PASSWORD,
+        web_secret="test-secret-not-a-real-one", football_token=None,
+        access_trusted=False, access_members={},
+    )
+    with caplog.at_level(logging.WARNING, logger="web.app"), TestClient(create_app(cfg)):
+        pass
+    assert "will not install on a phone" in caplog.text
+    assert "icon-512.png" in caplog.text
+
+
+def test_the_page_links_the_manifest_with_credentials(signed_in):
+    """Cloudflare Access sits in front of this site. A manifest fetched without
+    cookies is answered with Access's login page, and the install is refused
+    with nothing said about why — so the attribute is the whole feature."""
+    page = signed_in.get("/wine").text
+    link = re.search(r"<link[^>]*rel=\"manifest\"[^>]*>", page)
+    assert link, "no manifest linked"
+    assert 'crossorigin="use-credentials"' in link.group(0)
+    assert 'href="/manifest.webmanifest"' in link.group(0)
+
+
+def test_the_page_carries_what_ios_reads(signed_in):
+    """iOS ignores the manifest's icons and display mode and reads these."""
+    page = signed_in.get("/wine").text
+    assert 'rel="apple-touch-icon" href="/apple-touch-icon.png"' in page, \
+        "this checkout has the club's pictures, so it should be linked"
+    assert '<meta name="apple-mobile-web-app-capable" content="yes">' in page
+    assert '<meta name="apple-mobile-web-app-title" content="FC Vino">' in page
+
+
+def test_the_theme_colour_matches_the_page(signed_in):
+    """It is the colour the phone paints around the page. It said #1b2a42 —
+    the navy from the palette before this one — against a near-black page."""
+    page = signed_in.get("/wine").text
+    found = re.search(r'<meta name="theme-color" content="([^"]+)">', page)
+    assert found and found.group(1) == "#0a0b0a"
+
+    from web.deps import WEB_ROOT
+    sheet = (WEB_ROOT / "static" / "style_dark2.css").read_text()
+    assert re.search(r"--page:\s*#0a0b0a", sheet), "and it follows the stylesheet"
+
+
+def test_ios_can_find_the_icon_without_being_told(signed_in):
+    """The safety net. iOS tries these two at the root by itself when a page's
+    link is missing or it cannot use it, and without them the icon rests
+    entirely on one tag being read correctly by a part of iOS nobody can see
+    into — which is how a member ended up with a screenshot on his phone."""
+    from web.routes.installable import ICON_DIR
+
+    wanted = (ICON_DIR / "icon-180.png").read_bytes()
+    for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        response = signed_in.get(path)
+        assert response.status_code == 200, f"{path} is where iOS looks unprompted"
+        assert response.headers["content-type"] == "image/png"
+        assert response.content == wanted, f"{path} is not the icon itself"
+
+
+def test_the_tag_and_the_fallback_are_one_url(signed_in):
+    """Two URLs for one icon is two things that have to agree. And no version
+    stamp: an installed icon lives in the home-screen clip and is never fetched
+    again, so a stamp could not update it — it is only one more thing for an
+    undocumented fetcher to mishandle."""
+    page = signed_in.get("/wine").text
+    found = re.search(r'rel="apple-touch-icon" href="([^"]+)"', page)
+    assert found and found.group(1) == "/apple-touch-icon.png"
+    assert "?" not in found.group(1), "no query string on the one iOS reads"
+
+
+def test_without_the_artwork_there_is_no_icon_to_find(client, tmp_path, monkeypatch):
+    """A checkout without the club's pictures answers honestly, so iOS falls
+    back to a screenshot rather than to a broken image."""
+    from web.routes import installable
+
+    monkeypatch.setattr(installable, "ICON_DIR", tmp_path)
+    for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        assert client.get(path).status_code == 404
+    assert "apple-touch-icon" not in client.get("/login").text
+
+
+def test_the_worker_is_served_from_the_root(signed_in):
+    """Scope. A worker controls its own directory and below, so the same file
+    under /static would install without complaint and control nothing."""
+    response = signed_in.get("/sw.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert "addEventListener('fetch'" in response.text, \
+        "Android wants a fetch handler before it calls this installable"
+    assert signed_in.get("/wine").text.count("register('/sw.js')") == 1
+
+
+def test_the_worker_caches_nothing_that_changes(signed_in):
+    """The failure mode of most service workers is serving last week's page in
+    the middle of an evening, with no sign it has happened."""
+    worker = signed_in.get("/sw.js").text
+    cached = re.findall(r"cache\.add\w*\(([^)]*)\)", worker)
+    assert cached == ["OFFLINE"], f"it caches more than the offline page: {cached}"
+
+
+def test_the_offline_page_needs_nothing_to_render(client, cellar):
+    """It is shown when nothing can be reached, so it must not want a login, a
+    database row or a stylesheet — every one of those would be a hole in the
+    one page that cannot have any."""
+    response = client.get("/offline")
+    assert response.status_code == 200, "and it is not behind the login"
+    assert "isn&#39;t answering" in response.text or "isn't answering" in response.text
+    assert "<link" not in response.text, "nothing to fetch"
+    assert "/static/" not in response.text
+
+
 def test_the_stylesheet_url_is_stamped_with_the_files_version(signed_in):
     """Markup and stylesheet ship together but cache apart.
 
@@ -906,6 +1118,14 @@ def test_a_guest_cannot_be_claimed_as_your_name(signed_in, cellar):
 # -- the home page's upcoming panel -----------------------------------------
 
 
+def upcoming_panel(page):
+    """The home page's diary panel alone.
+
+    A closed evening reappears further down the page under Latest, so a test
+    about the diary has to say which list it means."""
+    return page.split("Upcoming")[1].split("</ul>")[0]
+
+
 def test_the_home_page_shows_what_is_coming_up(signed_in):
     make_event(signed_in, theme="Moden Piemonte")
     page = signed_in.get("/").text
@@ -913,9 +1133,22 @@ def test_the_home_page_shows_what_is_coming_up(signed_in):
     assert "Moden Piemonte" in page
 
 
-def test_an_evening_already_held_is_not_upcoming(signed_in):
-    make_event(signed_in, when=GONE, theme="Long gone")
-    assert "Long gone" not in signed_in.get("/").text
+def test_an_evening_stays_on_the_front_page_until_it_is_closed(signed_in, cellar):
+    """This used to assert the opposite, and the opposite was the bug.
+
+    Filtering on the clock took tonight's evening off the front page at seven
+    o'clock on the night itself — the one hour of the year it is wanted most.
+    An evening leaves when somebody files it, not when its start time passes.
+    """
+    make_event(signed_in, when=GONE, theme="Held last night")
+    shown = upcoming_panel(signed_in.get("/").text)
+    assert "Held last night" in shown
+    assert "still to close" in shown, "and it says which it is, so it is not a mistake"
+
+    # Closed, it leaves the diary panel — and turns up under Latest instead,
+    # which is why this looks at the one panel rather than the whole page.
+    signed_in.post(f"/events/{latest(cellar)['id']}/close")
+    assert "Held last night" not in upcoming_panel(signed_in.get("/").text)
 
 
 def test_only_the_next_four_evenings_are_listed(signed_in):
@@ -965,6 +1198,101 @@ def test_an_unknown_kind_is_refused(signed_in, cellar):
     assert cellar.query("SELECT * FROM events") == []
 
 
+# -- the diary's three lists -------------------------------------------------
+#
+# An evening is over when somebody has filed it, not when the clock passes it.
+# Splitting on the clock put an evening into Been and gone twenty minutes after
+# it began, while the club was still pouring the first wine.
+
+
+def section(page, heading):
+    """One of the diary's sections, from its heading to the end of its table."""
+    assert heading in page, f"no {heading!r} section on the page"
+    return page.split(f"<h2>{heading}</h2>")[1].split("</table>")[0]
+
+
+def test_an_evening_whose_time_has_passed_is_not_history(signed_in, cellar):
+    """The bug as reported: 'blindest of all' started at half past eight and
+    was in Been and gone at ten to nine, never started, never closed."""
+    kinded(signed_in, "blind", theme="Blindest of all", starts_at=GONE)
+    page = signed_in.get("/events").text
+
+    assert "Blindest of all" in section(page, "Still to close")
+    assert "Blindest of all" not in section(page, "Coming up")
+    assert "Been and gone" not in page, "nothing is filed, so there is no history yet"
+
+
+def test_closing_it_is_what_moves_it(signed_in, cellar):
+    kinded(signed_in, "blind", theme="Blindest of all", starts_at=GONE)
+    signed_in.post(f"/events/{latest(cellar)['id']}/wines", data={"name": "Alfa"})
+    signed_in.post(f"/events/{latest(cellar)['id']}/close")
+
+    page = signed_in.get("/events").text
+    assert "Blindest of all" in section(page, "Been and gone")
+    assert "in the archive" in section(page, "Been and gone")
+    assert "Still to close" not in page
+
+
+def test_an_evening_being_scored_is_not_history_either(signed_in, cellar):
+    """The worst of the two: the scoring page is open, everybody is halfway
+    through their card, and the diary has already filed the evening away."""
+    kinded(signed_in, "tasting", theme="Being scored", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Alfa"})
+    signed_in.post(f"/events/{event_id}/start")
+
+    page = signed_in.get("/events").text
+    assert "Being scored" in section(page, "Still to close")
+    assert "Been and gone" not in page
+
+
+def test_something_still_to_come_is_only_in_coming_up(signed_in, cellar):
+    make_event(signed_in, theme="Next month")
+    page = signed_in.get("/events").text
+    assert "Next month" in section(page, "Coming up")
+    assert "Still to close" not in page
+
+
+def test_an_evening_appears_in_exactly_one_list(signed_in, cellar):
+    """Three lists built from one set of rows, so the way to get this wrong is
+    for a row to fall into two of them — or into none."""
+    make_event(signed_in, theme="Ahead")
+    kinded(signed_in, "blind", theme="Behind", starts_at=GONE)
+    kinded(signed_in, "other", theme="Julebord", starts_at=GONE)
+    page = signed_in.get("/events").text
+
+    table = page.split("Coming up")[1]
+    for theme in ("Ahead", "Behind", "Julebord"):
+        assert table.count(f">{theme}</a>") == 1, f"{theme} is listed twice, or not at all"
+
+
+def test_something_else_entirely_has_nothing_to_close(signed_in, cellar):
+    """`other` has no archive to go to, so for that one the clock is the only
+    rule there could be — it goes straight to Been and gone."""
+    kinded(signed_in, "other", theme="Julebord", starts_at=GONE)
+    page = signed_in.get("/events").text
+    assert "Julebord" in section(page, "Been and gone")
+    assert "Still to close" not in page
+
+
+def test_a_trip_runs_until_it_is_filed_too(signed_in, cellar):
+    kinded(signed_in, "trip", theme="Brugge", country="Belgium", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    assert "Brugge" in section(signed_in.get("/events").text, "Still to close")
+
+    signed_in.post(f"/events/{event_id}/close")
+    assert "Brugge" in section(signed_in.get("/events").text, "Been and gone")
+
+
+def test_an_end_date_keeps_it_open_past_its_first_day(signed_in, cellar):
+    """A weekend away is not history on the Friday. `other` is the only kind
+    that falls back to the clock, so it is the only one that has to read the
+    end date — the others are held open by not having been filed."""
+    kinded(signed_in, "other", theme="Langhelg", starts_at=GONE,
+           ends_at="2099-03-08T18:00")
+    assert "Langhelg" in section(signed_in.get("/events").text, "Still to close")
+
+
 # -- blind: the bottles are not named until it is archived ------------------
 
 
@@ -987,7 +1315,7 @@ def test_a_blind_evening_does_not_name_its_bottles(signed_in, cellar):
     assert "Vega Sicilia Unico" not in page
     assert "Pingus Ribera" not in page
     assert "Nebbiolo" not in page
-    assert "Wine 1" in page and "Wine 2" in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
     assert "Thomas" in page, "who brought it still shows, so the list is usable"
     assert cellar.query("SELECT name FROM event_wines")[0]["name"] == "Vega Sicilia Unico"
 
@@ -997,7 +1325,7 @@ def test_archiving_a_blind_evening_names_them(signed_in, cellar):
     signed_in.post(f"/events/{event_id}/close")
     page = signed_in.get(f"/events/{event_id}").text
     assert "Vega Sicilia Unico" in page
-    assert "Wine 1" not in page
+    assert ">Wine 1<" not in page
     assert cellar.query("SELECT * FROM wines WHERE name = 'Vega Sicilia Unico'") != []
 
 
@@ -1033,7 +1361,7 @@ def test_a_byo_evening_shows_its_bottles_by_name(signed_in, cellar):
     signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
     page = signed_in.get(f"/events/{event_id}").text
     assert "Vega Sicilia Unico" in page, "a revealed bottle is named at once"
-    assert "Wine 1" in page and "Wine 2" in page, "and an unrevealed one says so"
+    assert ">Wine 1<" in page and ">Wine 2<" in page, "and an unrevealed one says so"
 
 
 def test_a_byo_evening_is_editable_while_it_runs(signed_in, cellar):
@@ -1090,6 +1418,163 @@ def test_a_named_lineup_is_not_warned_about(signed_in, cellar):
     event_id = three_bottles(signed_in, cellar)
     signed_in.post(f"/events/{event_id}/wines", data={"name": "Wine O'Clock 2019"})
     assert "still called Wine N" not in signed_in.get(f"/events/{event_id}").text
+
+
+# -- reveal: the responsible can see what they registered --------------------
+#
+# The one person a blind evening used to leave stuck. They bought the bottles
+# and typed them in, and the page then refused to show them their own lineup.
+# So they can ask for it back — for their own browser, and nobody else's.
+
+
+def blind_hosted_by(client, db, host="Morten", when=GONE):
+    """A blind evening with a responsible, and two bottles nobody can see."""
+    kinded(client, "blind", theme="Blind night", starts_at=when, host=host)
+    event_id = latest(db)["id"]
+    for name in ("Vega Sicilia Unico", "Pingus Ribera"):
+        client.post(f"/events/{event_id}/wines", data={"name": name})
+    return event_id
+
+
+def test_the_names_are_not_in_the_page_at_all_before_a_reveal(signed_in, cellar):
+    """The property the whole feature rests on. Hiding them with a stylesheet
+    would look identical and give every name away to anyone who looked."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in page
+    assert "Pingus Ribera" not in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
+
+
+def test_the_responsible_is_offered_the_button_and_nobody_else_is(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+
+    as_member(signed_in, "Andy", cellar)
+    assert "Reveal the bottles" not in signed_in.get(f"/events/{event_id}").text
+
+    as_member(signed_in, "Morten", cellar)
+    assert "Reveal the bottles" in signed_in.get(f"/events/{event_id}").text
+
+
+def test_the_route_refuses_anyone_else_not_just_the_button(signed_in, cellar):
+    """A page that merely leaves a button out is a page whose route can still
+    be posted to."""
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+    as_member(signed_in, "Andy", cellar)
+
+    response = signed_in.post(f"/events/{event_id}/reveal", follow_redirects=False)
+    assert response.status_code == 403
+    assert "responsible" in response.text
+    assert "Vega Sicilia Unico" not in response.text, "and it says no without saying what"
+
+
+def test_revealing_shows_the_responsible_their_own_lineup(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" in page and "Pingus Ribera" in page
+    assert ">Wine 1<" not in page
+    assert "Hide them again" in page
+    assert "Only this phone sees the names" in page, "so it is not passed round unawares"
+
+
+def test_a_reveal_changes_nobody_elses_page(signed_in, cellar):
+    """The test that would catch a reveal implemented as a flag on the event.
+    Two browsers, one database: Morten looks, Andy still sees Wine 1."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+
+    andy = TestClient(signed_in.app)
+    andy.post("/login", data={"password": PASSWORD})
+    as_member(andy, "Andy", cellar)
+    theirs = andy.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in theirs
+    assert ">Wine 1<" in theirs
+
+
+def test_hiding_them_again_puts_it_back(signed_in, cellar):
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/reveal")
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Vega Sicilia Unico" not in page
+    assert ">Wine 1<" in page
+    assert "Reveal the bottles" in page
+
+
+def test_a_reveal_does_not_outlive_being_the_responsible(signed_in, cellar):
+    """Re-checked on every render rather than trusted from the session, so
+    handing the evening to somebody else takes the names back."""
+    event_id = blind_hosted_by(signed_in, cellar, host="Morten")
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+
+    cellar.execute("UPDATE events SET host='Andy' WHERE id=?", (event_id,))
+    assert "Vega Sicilia Unico" not in signed_in.get(f"/events/{event_id}").text
+
+
+def test_with_nobody_responsible_the_page_says_so(signed_in, cellar):
+    """Rather than a button nobody can press, or none and no explanation."""
+    kinded(signed_in, "blind", theme="Unhosted", starts_at=GONE)
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    as_member(signed_in, "Morten", cellar)
+
+    page = signed_in.get(f"/events/{event_id}").text
+    assert "Nobody is down as responsible yet" in page
+    assert "Reveal the bottles" not in page
+    assert "Vega Sicilia Unico" not in page
+
+
+def test_revealing_is_meaningless_on_an_evening_that_hides_nothing(signed_in, cellar):
+    event_id = three_bottles(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    response = signed_in.post(f"/events/{event_id}/reveal", follow_redirects=False)
+    assert response.status_code == 400
+    assert "Nothing is hidden" in response.text
+
+
+def test_the_scoring_page_stays_blind_even_for_the_responsible(signed_in, cellar):
+    """Revealing is for checking the lineup, not for scoring with the answers
+    in front of you — and everyone is on the scoring page together."""
+    kinded(signed_in, "blind", theme="Tonight", starts_at=tonight(), host="Morten")
+    event_id = latest(cellar)["id"]
+    signed_in.post(f"/events/{event_id}/wines", data={"name": "Vega Sicilia Unico"})
+    as_member(signed_in, "Morten", cellar)
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/start")
+
+    assert "Vega Sicilia Unico" in signed_in.get(f"/events/{event_id}").text
+    card = signed_in.get(f"/events/{event_id}/vote").text
+    assert "Vega Sicilia Unico" not in card
+    assert ">Wine 1<" in card
+
+
+def test_a_revealed_bottle_can_be_corrected(signed_in, cellar):
+    """Look and fix: they registered it, so they can mend a typo in it."""
+    event_id = blind_hosted_by(signed_in, cellar)
+    as_member(signed_in, "Morten", cellar)
+    wine_id = cellar.query("SELECT id FROM event_wines WHERE event_id=? ORDER BY position",
+                           (event_id,))[0]["id"]
+
+    refused = signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                             data={"name": "Vega Sicilia Unico 1996"})
+    assert refused.status_code == 400, "not before it is revealed"
+    assert "named when it closes" in refused.text
+
+    signed_in.post(f"/events/{event_id}/reveal")
+    signed_in.post(f"/events/{event_id}/wines/{wine_id}",
+                   data={"name": "Vega Sicilia Unico 1996", "vintage": "1996"})
+    row = cellar.query_one("SELECT * FROM event_wines WHERE id=?", (wine_id,))
+    assert (row["name"], row["vintage"]) == ("Vega Sicilia Unico 1996", 1996)
 
 
 def test_an_ordinary_tasting_names_its_bottles_all_along(signed_in, cellar):
@@ -1736,7 +2221,7 @@ def test_a_blind_evening_is_scored_without_names(signed_in, cellar):
     page = signed_in.get(f"/events/{event_id}/vote").text
     assert "Vega Sicilia Unico" not in page
     assert "Pingus Ribera" not in page
-    assert "Wine 1" in page and "Wine 2" in page
+    assert ">Wine 1<" in page and ">Wine 2<" in page
 
 
 # -- closing ----------------------------------------------------------------
@@ -2324,7 +2809,7 @@ def test_a_blind_evening_shows_no_bottle(signed_in, cellar):
     as_member(signed_in, "Morten", cellar)
     page = signed_in.get(f"/events/{event_id}/vote").text
     assert "bilder.vinmonopolet.no" not in page
-    assert "Wine 1" in page
+    assert ">Wine 1<" in page
 
 
 def test_label_url_reads_both_kinds_of_row(cellar):

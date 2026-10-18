@@ -27,7 +27,7 @@ from bot.football_api import FootballAPI
 from .deps import WEB_ROOT, LoginRequired, redirect_to_login
 from .queries import IndexCache
 from .routes import auth as auth_routes
-from .routes import events, football, home, trips, wine
+from .routes import events, football, home, installable, trips, wine
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,17 @@ async def lifespan(app: FastAPI):
     app.state.index = IndexCache()
     app.state.football = FootballAPI(cfg.football_token) if cfg.has_football else None
     log.info("web app ready on %s", cfg.db_path)
+    # The home-screen icons are made from the club's wordmark, which is kept
+    # out of the public repository with the rest of the club's pictures. So a
+    # fresh checkout has not got them, and an installable site that cannot be
+    # installed says nothing about why — Android simply declines. This does.
+    absent = installable.missing_icons()
+    if absent:
+        log.warning(
+            "no home-screen icon (%s) — the site will not install on a phone "
+            "until the club's pictures are copied to web/static/",
+            ", ".join(absent),
+        )
     try:
         yield
     finally:
@@ -64,6 +75,15 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
     )
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
 
+    # The home-screen icons, and nothing else. Separate from /static because
+    # these are the only pictures that must be readable without signing in —
+    # Google's WebAPK builder fetches them from the open internet — and the
+    # Cloudflare Access bypass that allows it should not be able to reach the
+    # club's photographs by accident. `installable.py` says more.
+    icons = WEB_ROOT / "icons"
+    icons.mkdir(parents=True, exist_ok=True)
+    app.mount("/icons", StaticFiles(directory=str(icons)), name="icons")
+
     # The club's own label photographs, which beat Vinmonopolet's because they
     # are the actual bottle at the actual vintage. They live under `data/`,
     # gitignored like every other picture of the club's, so nothing here can
@@ -79,6 +99,7 @@ def create_app(cfg: config.Config | None = None) -> FastAPI:
         return redirect_to_login(request, exc.next_url)
 
     app.include_router(auth_routes.router)
+    app.include_router(installable.router)
     app.include_router(home.router)
     app.include_router(events.router)
     app.include_router(wine.router)
