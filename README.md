@@ -548,6 +548,16 @@ members' personal addresses: nobody's employer is going to allowlist a wine
 club, and a login that depends on a mail filter staying friendly will fail
 again on the night it matters.
 
+Two things that cost an evening each. **A consumer-looking address is no
+guarantee** — `online.no` hands its mail to `megamailservers.eu`, so it filters
+like any other third party and neither Telenor nor the member controls it. And
+**server-side filtering is invisible on a phone**: a mail app usually syncs the
+inbox alone, so the code can be sitting in a junk folder the member cannot see
+from the device they are holding. It has to be looked for in webmail. The quick
+way to tell a filtered code from a wrong address is one mail each way — if your
+message to them arrives and theirs comes back, the mailbox is fine and it is
+Cloudflare's sender specifically that is being dropped.
+
 **If an evening cannot wait**, set the application to Bypass for a few hours.
 The site then falls back to its own club password, which is how it ran before
 Access — it does not fall open, and
