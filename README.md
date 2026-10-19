@@ -533,6 +533,29 @@ Zero Trust dashboard:
   Include **Emails**, listing the club's addresses. That list is the gate; OTP
   only proves someone owns an address already on it.
 
+**Adding an address sends nothing.** There is no invitation in Access: the
+one-time code only goes out when that person opens the site themselves and
+types their address into the form. Someone waiting to be invited will wait for
+ever — send them the link instead.
+
+**And when one member gets a code and five do not, suspect their mail, not the
+policy.** A refused address is told it is refused; silence means the code was
+sent and something ate it. Corporate and municipal mail gateways quarantine an
+unfamiliar automated sender as a matter of routine, and the club's addresses
+sit on five different work domains. **Zero Trust → Logs → Access** shows every
+attempt with its outcome and settles it in a minute. The durable fix is to use
+members' personal addresses: nobody's employer is going to allowlist a wine
+club, and a login that depends on a mail filter staying friendly will fail
+again on the night it matters.
+
+**If an evening cannot wait**, set the application to Bypass for a few hours.
+The site then falls back to its own club password, which is how it ran before
+Access — it does not fall open, and
+`test_the_club_password_still_works_with_access_switched_off_at_the_edge` is
+there to keep that true. The cost is that anyone with the URL and the password
+is in, and members pick their own name instead of being recognised, so Reveal
+on a blind evening stops meaning much. Put it back the next morning.
+
 **The app then trusts that decision.** Set `FCVINO_ACCESS=1` — that is the whole
 configuration. Whoever Cloudflare vouched for is signed in on arrival, with no
 club password, and the member is read off the address: `sigurd@…` is Sigurd, and

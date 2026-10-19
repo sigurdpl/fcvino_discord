@@ -207,6 +207,28 @@ def test_behind_access_a_bare_request_still_meets_the_gate(behind_access):
     assert behind_access.get("/wine", follow_redirects=False).status_code == 303
 
 
+def test_the_club_password_still_works_with_access_switched_off_at_the_edge(
+    behind_access, cellar
+):
+    """The break-glass. If Access is set to Bypass — because its one-time codes
+    are being eaten by somebody's corporate mail filter and nine people are
+    waiting — the header stops arriving while `FCVINO_ACCESS` is still 1. The
+    app must then fall back to its own password rather than either locking the
+    club out or letting the world in.
+
+    The test above proves it does not fall open. This proves it does not lock
+    shut, which is the half you only find out about in front of everyone.
+    """
+    assert behind_access.post(
+        "/login", data={"password": PASSWORD}, follow_redirects=False
+    ).status_code == 303
+    assert behind_access.get("/wine").status_code == 200
+
+    assert behind_access.post("/logout", follow_redirects=False).status_code == 303
+    assert behind_access.get("/wine", follow_redirects=False).status_code == 303, \
+        "and signing out puts the gate back"
+
+
 def test_an_address_mapped_to_nobody_we_know_is_signed_in_but_unnamed(behind_access):
     """A typo in the .env mapping leaves you anonymous, not somebody else."""
     page = behind_access.get(
