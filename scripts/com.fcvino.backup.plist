@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A daily backup of the club's archive, pulled from the machine that serves it.
+
+      cp scripts/com.fcvino.backup.plist ~/Library/LaunchAgents/
+      # edit the two paths and the host below, then:
+      launchctl load ~/Library/LaunchAgents/com.fcvino.backup.plist
+      launchctl start com.fcvino.backup          # once, to prove it works
+
+  `RunAtLoad` is false on purpose: loading this should not fire a backup at a
+  moment you are not watching. Start it by hand the first time, read the log,
+  and let the schedule take over.
+
+  A laptop is asleep at 03:00 more often than not, so this runs at a civilised
+  hour — and launchd will run a missed job once the Mac wakes, which a cron
+  entry would not.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fcvino.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/sigurd/anaconda3/envs/fc_vino/bin/python</string>
+    <string>/Users/sigurd/private_source/fcvino_discord/scripts/backup_db.py</string>
+    <string>--host</string>
+    <string>sigurd@mint.local</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sigurd/private_source/fcvino_discord</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>11</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Both kept, because a backup that failed quietly is the whole problem. -->
+  <key>StandardOutPath</key>
+  <string>/Users/sigurd/private_source/fcvino_discord/data/backups/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sigurd/private_source/fcvino_discord/data/backups/backup.log</string>
+</dict>
+</plist>

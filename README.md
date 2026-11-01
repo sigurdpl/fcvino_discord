@@ -577,6 +577,67 @@ Leave both unset on a laptop: `web/access.py` explains why the header is only
 trustworthy when Cloudflare is the sole way to reach the origin, and what would
 have to replace it if the app were ever exposed directly.
 
+## Moving the site to another machine, and backing it up
+
+The site runs wherever `scripts/serve.py` is running and the tunnel is
+pointing. Moving it to the Linux box at home means carrying the things git
+deliberately does not hold, and then reversing the direction of the backups.
+
+**Once, to set up the key.** The Mac reaches into the server, never the other
+way about — the server is a work machine that could be reclaimed or re-imaged,
+and whatever can write to the backups can also destroy them.
+
+```bash
+ssh-keygen -t ed25519 -C fcvino          # if you have no key yet
+ssh-copy-id sigurd@mint.local            # once, with his password
+ssh sigurd@mint.local true               # must now be silent
+```
+
+**Once, to move the site.** Clone the repo there, then send what git will not:
+
+```bash
+export FCVINO_SERVER=sigurd@mint.local
+python scripts/send_to_server.py --dry-run     # look first
+python scripts/send_to_server.py
+scp -r ~/.cloudflared sigurd@mint.local:~/     # by hand, deliberately
+```
+
+That carries `.env`, the database, `data/labels/`, the club's photographs and
+the home-screen icons. It does **not** carry the 2012 photographs or the
+spreadsheet imports: those are already in the database and belong where they
+are. The tunnel's credentials are left to a deliberate act rather than a script
+anyone might re-run out of habit.
+
+**Then stop the tunnel here before starting it there.** One machine answers for
+`app.fcvino.no` at a time.
+
+**Re-running `send_to_server.py` is safe except for the database**, and it
+refuses that once the server has one — because from the moment the site runs
+there, the server's copy is the real one and this Mac's is yesterday's. It
+takes `--force-database` and makes you type the word *overwrite*.
+
+**Daily, to keep the history.**
+
+```bash
+python scripts/backup_db.py            # take one now
+python scripts/backup_db.py --list     # what is here, and what would be pruned
+```
+
+The snapshot is taken **on the server, through sqlite** — a WAL database copied
+as a file is quietly the past — and every copy is checked before anything is
+deleted: `PRAGMA integrity_check`, and the row counts compared against the live
+database it came from. A copy that fails either is thrown away and nothing is
+pruned, so a bad backup can never be the reason a good one went.
+
+Pruning keeps the last fourteen and the first of every month, for ever.
+Fourteen days answers "I broke it yesterday"; only the monthlies answer "this
+has been wrong since the spring".
+
+To have it run by itself, `scripts/com.fcvino.backup.plist` is a launchd job —
+edit the paths and the host, copy it to `~/Library/LaunchAgents/`, and load it.
+It deliberately does not run on load: start it once by hand and read
+`data/backups/backup.log` before trusting it.
+
 ## Notes
 
 - **Neither half is online unless you have started it.** `python -m bot` for
