@@ -25,7 +25,9 @@
     <string>/Users/sigurd/anaconda3/envs/fc_vino/bin/python</string>
     <string>/Users/sigurd/private_source/fcvino_discord/scripts/backup_db.py</string>
     <string>--host</string>
-    <string>sigurd@mint.local</string>
+    <string>sigurd@sigurd-mint.local</string>
+    <string>--path</string>
+    <string>/home/sigurd/private_source/fcvino_discord</string>
   </array>
 
   <key>WorkingDirectory</key>

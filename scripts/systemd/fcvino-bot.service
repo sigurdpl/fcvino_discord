@@ -1,0 +1,30 @@
+# The Discord bot, kept online without a terminal open for it.
+#
+# User unit, not a system one: the repo, .env and the conda env all live
+# under this account already, so there is nothing here a service user would
+# gain. Install once:
+#
+#     mkdir -p ~/.config/systemd/user
+#     cp scripts/systemd/fcvino-bot.service ~/.config/systemd/user/
+#     loginctl enable-linger $USER          # starts it at boot, not just at login
+#     systemctl --user enable --now fcvino-bot
+#     journalctl --user -u fcvino-bot -f
+#
+# `.env` is loaded by `bot/config.py` from the repo root regardless of the
+# working directory, but WorkingDirectory is still set so relative paths
+# (the database, label photos) resolve the same way they do by hand.
+
+[Unit]
+Description=FC Vino Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sigurd/private_source/fcvino_discord
+ExecStart=/home/sigurd/anaconda3/envs/fc_vino/bin/python -m bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

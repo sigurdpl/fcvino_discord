@@ -1,0 +1,29 @@
+# The tunnel that makes app.fcvino.no answer from this machine.
+#
+# Depends on `~/.cloudflared/` already holding the named tunnel's config and
+# credentials — copied over by hand, deliberately, per the README section on
+# moving the site (`scp -r ~/.cloudflared <host>:~/`). Nothing here creates
+# or renews that tunnel.
+#
+# Install alongside fcvino-bot/fcvino-web.service:
+#
+#     cp scripts/systemd/cloudflared.service ~/.config/systemd/user/
+#     systemctl --user enable --now cloudflared
+#     journalctl --user -u cloudflared -f
+#
+# Only one machine should run this at a time for a given tunnel — stop it on
+# the old machine before starting it here.
+
+[Unit]
+Description=cloudflared tunnel (fcvino-app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel run fcvino-app
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
