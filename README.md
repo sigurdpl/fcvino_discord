@@ -511,15 +511,38 @@ No network and no token: the football API and Discord are both stubbed. Alongsid
 The site is reachable at **app.fcvino.no** through a Cloudflare tunnel, with
 Cloudflare Access in front of it. Nothing listens on a public port: uvicorn stays
 bound to `127.0.0.1:8000` and `cloudflared` dials out to Cloudflare, so the tunnel
-is the only route in. Both have to be running:
+is the only route in.
+
+On the Linux box that serves the club, both the app and the tunnel run as
+systemd **user** units — `scripts/systemd/fcvino-web.service` and
+`scripts/systemd/cloudflared.service` (the bot has its own,
+`fcvino-bot.service`). User units rather than system ones because the repo,
+`.env` and `~/.cloudflared` all already live under that account — there is
+nothing a dedicated service user would add. Installed once:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp scripts/systemd/*.service ~/.config/systemd/user/
+loginctl enable-linger $USER          # starts them at boot, not only at login
+systemctl --user enable --now fcvino-bot fcvino-web cloudflared
+journalctl --user -u fcvino-web -f    # and -u fcvino-bot, -u cloudflared
+```
+
+All three restart on crash (`Restart=on-failure`) and come back after a reboot
+without anyone starting them by hand. Only one machine should run
+`cloudflared.service` for a given tunnel at a time — stop it on whichever
+machine is being retired before starting it on the new one.
+
+For a one-off local run — a laptop, or testing before the service is
+installed — the manual form still works the same way it always did:
 
 ```bash
 uvicorn web.app:app          # the app, on localhost:8000
 cloudflared tunnel run fcvino-app   # the tunnel, in another terminal
 ```
 
-Neither survives a reboot on its own — until they are started again, the domain
-answers with Cloudflare's error page rather than the cellar.
+Neither of those survives closing the terminal; that's what the service units
+above are for.
 
 **Who gets in** is decided at the edge, before a request reaches the app. In the
 Zero Trust dashboard:

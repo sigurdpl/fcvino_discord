@@ -1,0 +1,26 @@
+# The web app, bound to localhost only — cloudflared is the one route in.
+#
+# No --reload here: that flag is for scripts/serve.py during development,
+# where a file edit should restart the process. A production service should
+# only restart on an actual crash, which Restart=on-failure already covers.
+#
+# Install alongside fcvino-bot.service (see that file for the shared steps):
+#
+#     cp scripts/systemd/fcvino-web.service ~/.config/systemd/user/
+#     systemctl --user enable --now fcvino-web
+#     journalctl --user -u fcvino-web -f
+
+[Unit]
+Description=FC Vino web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sigurd/private_source/fcvino_discord
+ExecStart=/home/sigurd/anaconda3/envs/fc_vino/bin/uvicorn web.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
