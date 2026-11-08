@@ -94,6 +94,7 @@ outside:
 python scripts/serve.py --live                      # the club's archive, :8000
 python scripts/serve.py --sandbox                   # a throwaway copy, :8001
 python scripts/serve.py --sandbox --port 8000 --keep --behind-cloudflare
+python scripts/serve.py --sandbox --from-backup   # seeded from the newest backup
 ```
 
 A sandbox is copied from the live database through sqlite (not `cp` — the
@@ -102,7 +103,10 @@ register an evening, score it and press Close with the real one untouched —
 which matters, because Close is the one button in the app that does not come
 back. Each run starts fresh; `--keep` carries on with the last copy.
 `--behind-cloudflare` is for serving a sandbox through the tunnel, where Access
-should stay on. Every page of a sandbox carries a **Test data** strip, and that
+should stay on. `--from-backup` copies the newest snapshot in `data/backups/`
+instead of the database `.env` names — the right source on the Mac, whose own
+`fcvino.sqlite3` stopped being the archive the day the site moved. Every page
+of a sandbox carries a **Test data** strip, and that
 follows the file rather than the flag, so it cannot be left on by mistake.
 
 **On a phone it installs.** The site carries a web app manifest, so *Add to
@@ -600,6 +604,67 @@ Leave both unset on a laptop: `web/access.py` explains why the header is only
 trustworthy when Cloudflare is the sole way to reach the origin, and what would
 have to replace it if the app were ever exposed directly.
 
+## A test site at test.fcvino.no
+
+The club's site runs on the Linux box; the branch being worked on runs on the
+Mac, at **test.fcvino.no**, against a copy of the club's data and behind the
+same Cloudflare Access. A feature is tried there first, merged, and only then
+pulled onto the server:
+
+```bash
+scripts/test_site.sh            # on the Mac: newest backup, served at test.fcvino.no
+scripts/test_site.sh --fresh    # take a backup off the server first
+# ...try it, open the PR, merge it, then on the Linux box:
+git pull && systemctl --user restart fcvino-web    # and fcvino-bot, if bot/ changed
+```
+
+The script starts the tunnel, serves `serve.py --sandbox --from-backup
+--behind-cloudflare` on :8001, and takes the tunnel down again on Ctrl-C — the
+test site only exists while somebody is working on it. Every page carries the
+**Test data** strip, and nothing done there reaches the real archive. There is
+no test bot: a second bot would need its own Discord application and its own
+server, or it would answer and remind in the club's channels.
+
+**It is its own tunnel, `fcvino-test` — never a second `fcvino-app`.** Two
+machines running one named tunnel are replicas to Cloudflare, which spreads
+traffic across them regardless of what each machine's ingress says: some of the
+club would land on a sandbox on a laptop. The script refuses a config that
+names `fcvino-app` or routes `app.fcvino.no`.
+
+**Once, to set it up.** On the Mac:
+
+```bash
+mv ~/.cloudflared/config.yml ~/.cloudflared/config.yml.fcvino-app-retired  # first, see below
+cloudflared tunnel create fcvino-test
+cloudflared tunnel route dns --overwrite-dns fcvino-test test.fcvino.no
+```
+
+**Move the old `config.yml` out of the way before `route dns`.** While it says
+`tunnel: fcvino-app`, cloudflared routes the new hostname to *that* tunnel
+rather than the one named on the command line. The symptom costs an afternoon:
+the PIN works, then Safari shows a white page and Chrome an HTTP 404, and
+nothing reaches the app. The 404 is the club's tunnel on the Linux box
+answering for a hostname it was never given. In the dashboard (fcvino.no →
+DNS → Records) the `test` CNAME must point at the *test* tunnel's UUID;
+`--overwrite-dns` above puts it right if it does not.
+
+Then `~/.cloudflared/test.yml`, with the UUID file the first command wrote:
+
+```yaml
+tunnel: fcvino-test
+credentials-file: /Users/sigurd/.cloudflared/<uuid>.json
+ingress:
+  - hostname: test.fcvino.no
+    service: http://localhost:8001
+  - service: http_status:404
+```
+
+In Zero Trust, **Access controls → Applications → Add → Self-hosted** for
+`test.fcvino.no`, with the club's Allow policy (or just your own address) and
+One-time PIN. Do this *before* the first run — without it the test site is open
+to anyone who guesses the name. And on the Mac's `.env`, `FCVINO_ACCESS=1` and a
+`WEB_SESSION_SECRET` of its own, not production's.
+
 ## Moving the site to another machine, and backing it up
 
 The site runs wherever `scripts/serve.py` is running and the tunnel is
@@ -632,7 +697,10 @@ are. The tunnel's credentials are left to a deliberate act rather than a script
 anyone might re-run out of habit.
 
 **Then stop the tunnel here before starting it there.** One machine answers for
-`app.fcvino.no` at a time.
+`app.fcvino.no` at a time. Once it is running there, retire the Mac's copy of the
+`fcvino-app` config (rename `~/.cloudflared/config.yml`) so that a bare
+`cloudflared tunnel run` out of habit cannot join the club's tunnel; the Mac's
+tunnel from then on is `fcvino-test`, above.
 
 **Re-running `send_to_server.py` is safe except for the database**, and it
 refuses that once the server has one — because from the moment the site runs

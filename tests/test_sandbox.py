@@ -303,6 +303,8 @@ def test_the_old_command_still_means_sandbox(monkeypatch):
     monkeypatch.setattr(serve, "serve",
                         lambda database, port, env: seen.update(db=database, env=env) or 0)
     monkeypatch.setattr(serve, "copy_database", lambda source, target: target)
+    # :8001 is where the test site runs, so it may well be taken right now.
+    monkeypatch.setattr(serve, "who_has", lambda port: None)
 
     sandbox.main([])
     assert seen["db"].name == "sandbox.sqlite3"
@@ -375,3 +377,74 @@ def test_the_clash_is_found_before_the_copy_is_taken(monkeypatch):
         assert copied == [], "nothing was overwritten on the way to the refusal"
     finally:
         held.close()
+
+
+# -- seeding from a backup, on a machine that no longer serves the club ------
+
+
+def _backup(folder, stamp, live_path):
+    """A snapshot named the way backup_db.py names them."""
+    folder.mkdir(parents=True, exist_ok=True)
+    return copy_database(live_path, folder / f"fcvino-{stamp}.sqlite3")
+
+
+def test_the_newest_backup_is_the_one_chosen(live, tmp_path):
+    from scripts import serve
+
+    folder = tmp_path / "backups"
+    _backup(folder, "2026-11-01T230000", live.path)
+    newest = _backup(folder, "2026-11-07T230005", live.path)
+    _backup(folder, "2026-10-01T230000", live.path)
+    (folder / "notes.sqlite3").touch()          # not a backup, never chosen
+    assert serve.newest_backup(folder) == newest
+
+
+def test_no_backups_is_said_rather_than_served(monkeypatch, tmp_path):
+    """Falling back to the stale local file would be exactly the mistake the
+    flag exists to avoid, so it stops and says how to get a backup instead."""
+    from scripts import serve
+
+    with pytest.raises(FileNotFoundError, match="backup_db.py"):
+        serve.newest_backup(tmp_path / "empty")
+
+    monkeypatch.setattr(serve, "BACKUPS", tmp_path / "empty")
+    monkeypatch.setattr(serve, "who_has", lambda port: None)
+    reached = []
+    monkeypatch.setattr(serve, "copy_database", lambda *a: reached.append(a))
+    monkeypatch.setattr(serve, "serve", lambda *a, **k: reached.append(a) or 0)
+    assert serve.main(["--sandbox", "--from-backup"]) == 2
+    assert reached == []
+
+
+def test_the_sandbox_is_copied_from_the_backup_and_leaves_it_alone(
+        live, monkeypatch, tmp_path):
+    from scripts import serve
+
+    backup = _backup(tmp_path / "backups", "2026-11-07T230005", live.path)
+    sandbox = tmp_path / "sandbox.sqlite3"
+    monkeypatch.setattr(serve, "BACKUPS", tmp_path / "backups")
+    monkeypatch.setattr(serve, "who_has", lambda port: None)
+    served = {}
+    monkeypatch.setattr(serve, "serve",
+                        lambda database, port, env: served.update(db=database) or 0)
+
+    assert serve.main(["--sandbox", "--from-backup", "--sandbox-path", str(sandbox)]) == 0
+    assert served["db"] == sandbox
+    assert counts(sandbox) == counts(backup)
+
+    playing = Database(sandbox)
+    playing.connect()
+    playing.execute("DELETE FROM wine_ratings")
+    playing.close()
+    assert counts(backup)["wine_ratings"] == 1, "the backup is untouched"
+
+
+def test_the_age_of_the_backup_is_said_plainly():
+    from datetime import datetime
+
+    from scripts.serve import backup_age
+
+    now = datetime(2026, 11, 8, 12, 0)
+    assert backup_age(Path("fcvino-2026-11-08T113000.sqlite3"), now) == "less than an hour old"
+    assert backup_age(Path("fcvino-2026-11-07T230005.sqlite3"), now) == "12 hours old"
+    assert backup_age(Path("fcvino-2026-11-01T230000.sqlite3"), now) == "6 days old"

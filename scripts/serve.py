@@ -4,6 +4,7 @@
     python scripts/serve.py --live
     python scripts/serve.py --sandbox
     python scripts/serve.py --sandbox --port 8000 --keep --behind-cloudflare
+    python scripts/serve.py --sandbox --from-backup --behind-cloudflare
 
 One front door for both, because the alternative was two differently shaped
 commands — and the one needed on the day the site goes live is the one typed
@@ -28,11 +29,13 @@ import socket
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot import config  # noqa: E402
+from scripts.backup_db import BACKUPS, STAMP, existing  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_SANDBOX = REPO / "data" / "sandbox.sqlite3"
@@ -75,6 +78,34 @@ def copy_database(source: Path, target: Path) -> Path:
         copy.close()
         origin.close()
     return target
+
+
+def newest_backup(folder: Path = BACKUPS) -> Path:
+    """The latest snapshot `backup_db.py` brought home, to seed a sandbox from.
+
+    Once the site moved to the Linux box, this Mac's own `fcvino.sqlite3`
+    stopped being the archive and started being the day it was copied across.
+    A sandbox taken from it would show evenings missing that the club can see
+    on the real site. The nightly backups are the Mac's freshest true copy, and
+    each one was integrity-checked before it was kept.
+    """
+    found = existing(Path(folder))
+    if not found:
+        raise FileNotFoundError(
+            f"no backups in {folder} — take one first: python scripts/backup_db.py"
+        )
+    return found[-1]
+
+
+def backup_age(backup: Path, now: datetime | None = None) -> str:
+    """'3 hours old', said beside the copy so a stale one is noticed."""
+    taken = datetime.strptime(backup.stem.removeprefix("fcvino-"), STAMP)
+    hours = int(((now or datetime.now()) - taken).total_seconds() // 3600)
+    if hours < 1:
+        return "less than an hour old"
+    if hours < 48:
+        return f"{hours} hour{'s' if hours != 1 else ''} old"
+    return f"{hours // 24} days old"
 
 
 def sandbox_env(database: Path, *, behind_cloudflare: bool = False) -> dict[str, str]:
@@ -169,6 +200,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="sandbox: served through the tunnel, so leave Access as .env has it")
     parser.add_argument("--copy-only", action="store_true",
                         help="sandbox: make the copy and stop")
+    parser.add_argument("--from-backup", action="store_true",
+                        help="sandbox: copy the newest of data/backups/ rather than "
+                             "the database .env names — the right source on a "
+                             "machine that no longer serves the club")
     args = parser.parse_args(argv)
 
     cfg = config.load(require_discord=False)
@@ -195,12 +230,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.keep and args.sandbox_path.exists():
         print(f"carrying on with {args.sandbox_path}")
     else:
+        source = live
+        if args.from_backup:
+            try:
+                source = newest_backup(BACKUPS)
+            except FileNotFoundError as exc:
+                print(exc)
+                return 2
         try:
-            copy_database(live, args.sandbox_path)
+            copy_database(source, args.sandbox_path)
         except WouldClobberTheRealThing as exc:
             print(exc)
             return 2
-        print(f"copied {live}\n    to {args.sandbox_path}")
+        print(f"copied {source}\n    to {args.sandbox_path}")
+        if args.from_backup:
+            print(f"    the backup is {backup_age(source)}")
 
     print(f"\nserving a COPY — {args.sandbox_path}. The real one is untouched,")
     print("and every page will say so.")
