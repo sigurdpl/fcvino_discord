@@ -303,6 +303,8 @@ def test_the_old_command_still_means_sandbox(monkeypatch):
     monkeypatch.setattr(serve, "serve",
                         lambda database, port, env: seen.update(db=database, env=env) or 0)
     monkeypatch.setattr(serve, "copy_database", lambda source, target: target)
+    # :8001 is where the test site runs, so it may well be taken right now.
+    monkeypatch.setattr(serve, "who_has", lambda port: None)
 
     sandbox.main([])
     assert seen["db"].name == "sandbox.sqlite3"
